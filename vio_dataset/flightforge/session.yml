@@ -1,0 +1,66 @@
+# do not modify these
+root: ./
+name: simulation
+socket_name: mrs
+attach: false
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+# you can modify these
+startup_window: status
+pre_window: export UAV_NAME=uav1; export USE_SIM_TIME="true"; export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+windows:
+  - router:
+      layout: tiled
+      panes:
+        - ros2 run rmw_zenoh_cpp rmw_zenohd
+  - simulator:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_uav_flightforge_simulator flightforge_simulator.launch.py custom_config:=./config/simulator.yaml
+  - hw_api:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_uav_flightforge_simulator hw_api.launch.py
+  - vio:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_open_vins_core open_vins.launch.py config_path:=`ros2 pkg prefix mrs_open_vins_core`/share/mrs_open_vins_core/config/simulation_flightforge/estimator_config.yaml
+  - vins_republisher:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_vins_republisher vins_republisher.launch.py camera_pitch:=0 camera_roll:=0 camera_yaw:=0
+  - static_tf:
+      layout: tiled
+      panes:
+        - ./config/static_tfs.sh
+  - status:
+      layout: tiled
+      panes:
+        - ros2 run mrs_uav_status status.sh
+  - core:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_uav_core core.launch.py platform_config:=./config/platform_config.yaml world_config:=./config/world_config.yaml custom_config:=./config/custom_config.yaml network_config:=./config/network_config.yaml
+  - takeoff:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_uav_autostart automatic_start.launch.py custom_config:=./config/automatic_start.yaml
+  - commands:
+      layout: tiled
+      panes:
+        - waitForCore; ./takeoff.sh
+  - goto:
+      layout: tiled
+      panes:
+        - 'history -s ros2 service call /$UAV_NAME/octomap_planner/goto mrs_msgs/srv/Vec4 "goal: {x: 0.0, y: 60.0, z: 2.0, w: 0.0}"'
+  - rviz:
+      layout: tiled
+      panes:
+        - ros2 run rviz2 rviz2 -d ./rviz.rviz --ros-args -p use_sim_time:=true
+  - reconfigure:
+      layaut: tiled
+      panes:
+        - ros2 run rqt_reconfigure rqt_reconfigure
+  - layout:
+      layout: tiled
+      panes:
+        - sleep 5; ~/.i3/layout_manager.sh ./layout.json

@@ -1,0 +1,33 @@
+# do not modify these
+root: ./
+name: simulation
+socket_name: mrs
+attach: false
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+# you can modify these
+startup_window: status
+
+pre_window: export UAV_NAME=uav1; export USE_SIM_TIME="true"; export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+
+windows:
+  - router:
+      layout: tiled
+      panes:
+        - ros2 run rmw_zenoh_cpp rmw_zenohd
+
+  - vio:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_open_vins_core open_vins.launch.py config_path:=./config/estimator_config.yaml
+  
+  - vins_republisher:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_vins_republisher vins_republisher.launch.py camera_pitch:=0 camera_roll:=0 camera_yaw:=0
+
+# gui for dynamic parameter changing
+#  - reconfigure:
+#      layaut: tiled
+#      panes:
+#        - ros2 run rqt_reconfigure rqt_reconfigure
+
