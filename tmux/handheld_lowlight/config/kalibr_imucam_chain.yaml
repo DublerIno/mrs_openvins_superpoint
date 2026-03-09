@@ -1,0 +1,31 @@
+%YAML:1.0
+
+cam0:
+  T_imu_cam: #rotation from camera to IMU R_CtoI, position of camera in IMU p_CinI
+    - [1, 0, 0, 0]
+    - [0, 1, 0, 0]
+    - [0, 0, 1, 0]
+    - [0, 0, 0, 1]
+    
+  # cam_overlaps: [0]
+  # camera_model: pinhole
+  # distortion_coeffs: [-0.007054279635535503,-0.013010999471709818,0.007672805064263297,-0.0034608152598251778]
+  # distortion_model: equidistant
+  # intrinsics: [218.62328342963636,218.84544019573178, 374.186243114997, 203.57046644527676] #fu, fv, cu, cv
+  # resolution: [752, 480]
+  
+  #cam_overlaps: [0]
+  #camera_model: pinhole
+  #distortion_coeffs: [-0.0020185826390537016, -0.007688770893251915, -0.00038959270343207655, -0.000465249856733856]
+  #distortion_model: equidistant
+  #intrinsics: [217.88521402620648, 217.7127565041609, 392.36434593680553, 218.27079698259612]
+  #resolution: [752, 480]
+  #rostopic: bluefox/image_raw
+  
+  cam_overlaps: []
+  camera_model: pinhole
+  distortion_coeffs: [0.00448200282925713, -0.02548797073844004, 0.01750564112649169, -0.006029111374610122]
+  distortion_model: equidistant
+  intrinsics: [217.49569181622937, 218.08153824107958, 391.2056308196533, 218.37070619705466]
+  resolution: [752, 480]
+  rostopic: /uav1/bluefox/image_raw

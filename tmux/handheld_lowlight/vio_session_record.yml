@@ -1,0 +1,43 @@
+# do not modify these
+root: ./
+name: handheld_lowlight
+socket_name: mrs
+attach: true
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+# you can modify these
+startup_window: open_vins
+#pre_window: export UAV_NAME=uav1; export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+pre_window: export UAV_NAME=uav1 && STAMP=$(date +%Y_%m_%d-%H_%M_%S)
+windows:
+  - router:
+      layout: tiled
+      panes:
+        - ros2 run rmw_zenoh_cpp rmw_zenohd
+  - bluefox:
+      layout: tiled
+      panes:
+        - ros2 launch bluefox2 single.launch.py
+  - imu:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_serial vio_imu.launch.py
+  - open_vins:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_open_vins_core open_vins.launch.py config_path:=config/estimator_config.yaml enable_filter:=true
+  - rviz:
+      layout: tiled
+      panes:
+        - ros2 run rviz2 rviz2 --display-config rviz.rviz
+  - bag_record:
+      layout: tiled
+      panes:
+        - mkdir rosbag2_$STAMP && cp DONT_RUN_vio_replay.bash rosbag2_$STAMP/vio_replay.bash && ros2 bag record --output rosbag2_$STAMP/bag --topics /uav1/vio_imu/imu_raw /uav1/bluefox/image_raw/compressed
+  - params_dump_bluefox:
+      layout: tiled
+      panes:
+        - sleep 10 && PARAM_STAMP=$(date +%Y_%m_%d-%H_%M_%S) && ros2 param dump /uav1/bluefox > rosbag2_$STAMP/bluefox_params_$PARAM_STAMP
+  - params_dump_imu:
+      layout: tiled
+      panes:
+        - sleep 10 && PARAM_STAMP=$(date +%Y_%m_%d-%H_%M_%S) && ros2 param dump /uav1/vio_imu > rosbag2_$STAMP/imu_params_$PARAM_STAMP

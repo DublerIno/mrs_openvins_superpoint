@@ -2,4 +2,10 @@ build:
   mixin:
     - rel-with-deb-info
     - compile-commands
-  allow-overriding: []
+  allow-overriding: [
+    "mrs_uav_flightforge_simulator",
+    "ov_core",
+    "ov_eval",
+    "ov_init",
+    "ov_msckf",
+  ]

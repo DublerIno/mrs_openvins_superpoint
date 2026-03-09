@@ -1,0 +1,23 @@
+# do not modify these
+root: ./
+name: handheld_lowlight
+socket_name: mrs
+attach: true
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+# you can modify these
+startup_window: open_vins
+#pre_window: export UAV_NAME=uav1; export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+pre_window: export UAV_NAME=uav1
+windows:
+  - router:
+      layout: tiled
+      panes:
+        - ros2 run rmw_zenoh_cpp rmw_zenohd
+  - bluefox:
+      layout: tiled
+      panes:
+        - ros2 launch bluefox2 single.launch.py
+  - rqt_image_view:
+      layout: tiled
+      panes:
+        - ros2 run rqt_image_view rqt_image_view
