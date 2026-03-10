@@ -160,8 +160,10 @@ SPextractor::SPextractor(int _nfeatures,
 
     //!! udelat jako parametr
     //model->load_weights("/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin");
-    model->load_weights(weights_path);
     
+    std::cout << "Loading SuperPoint model weights from " << weights_path << std::endl;
+    model->load_weights(weights_path);
+
 
 
     mvScaleFactor.resize(nlevels);
@@ -201,10 +203,11 @@ SPextractor::SPextractor(int _nfeatures,
 
 //HARD CODED PARAMS!!!
 //nfeatures=500, scaleFactor=1.2, nlevels=4, iniThFAST/threshold=0.015, minThFAST/threshold=0.007
+/*
 SPextractor::SPextractor()
   : SPextractor(500, 1.2f, 4, 0.015f, 0.007f)
 {}
-
+*/
 
 vector<cv::KeyPoint> SPextractor::DistributeOctTree(const vector<cv::KeyPoint>& vToDistributeKeys, const int &minX,
                                        const int &maxX, const int &minY, const int &maxY, const int &N, const int &level)

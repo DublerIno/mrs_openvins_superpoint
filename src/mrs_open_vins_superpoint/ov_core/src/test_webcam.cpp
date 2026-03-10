@@ -143,8 +143,17 @@ int main(int argc, char **argv) {
 
   // Lets make a feature extractor
   //extractor = new TrackKLT(cameras, num_pts, num_aruco, !use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist);
-  
-  extractor = new TrackDescriptor(cameras, num_pts, num_aruco, !use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist, knn_ratio);
+  //superpoint params
+  std::string _weights_path = "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin";
+  double _sp_threshold = 0.015;
+  bool _do_nms = true;
+  bool _use_cuda = true;
+  int sp_nfeatures = 500;
+  float sp_scaleFactor = 1.2; 
+  int sp_nlevels = 4;
+  float sp_iniThFAST = 0.015;
+  float sp_minThFAST = 0.007;
+  extractor = new TrackDescriptor(cameras, num_pts, num_aruco, !use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist, knn_ratio, _weights_path, _sp_threshold,_do_nms, _use_cuda, sp_nfeatures, sp_scaleFactor, sp_nlevels, sp_iniThFAST,sp_minThFAST);
   
     // knn_ratio); extractor = new TrackAruco(cameras, num_aruco, !use_stereo, method, do_downsizing);
 

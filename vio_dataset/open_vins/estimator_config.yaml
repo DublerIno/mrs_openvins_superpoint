@@ -104,7 +104,7 @@ num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
 histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
 
 #superpoint params
-weight_path:"/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin" #absolute path to cnn weights
+weights_path:"/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin" #absolute path to cnn weights
 do_nms: true 
 use_cuda: true #true to use cuda graphical accelaration
 sp_threshold:0.015
@@ -113,7 +113,7 @@ sp_nfeatures: 500
 sp_scaleFactor: 1.2
 sp_nlevels: 4
 sp_iniThFAST: 0.015
-sp_minThFAST: 0.007
+sp_minThFAST: 0.00
 
 
 

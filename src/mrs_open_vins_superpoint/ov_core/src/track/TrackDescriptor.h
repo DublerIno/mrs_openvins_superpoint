@@ -68,7 +68,7 @@ public:
                           int gridy,
                           int minpxdist,
                           double knnratio,
-                          std::string weight_path,
+                          std::string weights_path,
                           double sp_threshold,
                           bool do_nms,
                           bool use_cuda,
@@ -181,7 +181,7 @@ protected:
   cv::Ptr<cv::ORB> orb0 = cv::ORB::create();
   cv::Ptr<cv::ORB> orb1 = cv::ORB::create();
 
-  ORB_SLAM2::ORBextractor sp0;
+  
 
   // Our descriptor matcher
   
@@ -201,9 +201,9 @@ protected:
   double knn_ratio;
 
   // Descriptor matrices
-  std::unordered_map<size_t, cv::Mat> desc_slast;
+  std::unordered_map<size_t, cv::Mat> desc_last;
 
-
+  ORB_SLAM2::ORBextractor sp0;
   //Superpoint params
   //std::string weights_path_;
   //double sp_threshold_;
