@@ -1,5 +1,7 @@
 %YAML:1.0 # need to specify the file type at the top!
 
+#ESTIMATOR CONGIF FOR SUPERPOINT DESCRIPTOR
+
 verbosity: "INFO" # ALL, DEBUG, INFO, WARNING, ERROR, SILENT
 
 use_fej: true # if first-estimate Jacobians should be used (enable for good consistency)
@@ -100,6 +102,20 @@ track_frequency: 50.0 # frequency we will perform feature tracking at (in frames
 downsample_cameras: true # will downsample image in half if true
 num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
 histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
+
+#superpoint params
+weight_path:"/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin" #absolute path to cnn weights
+do_nms: true 
+use_cuda: true #true to use cuda graphical accelaration
+sp_threshold:0.015
+#sp extractor
+sp_nfeatures: 500
+sp_scaleFactor: 1.2
+sp_nlevels: 4
+sp_iniThFAST: 0.015
+sp_minThFAST: 0.007
+
+
 
 multi_threading_pubs: true
 multi_threading_subs: true

@@ -440,6 +440,23 @@ struct VioManagerOptions {
 
   /// Frequency we want to track images at (higher freq ones will be dropped)
   double track_frequency = 20.0;
+  
+  //SUPERPOINT
+  /// Absolute path to SuperPoint weights
+  std::string weights_path = "/ov_core/src/track/superpoint_model_weights.bin";
+  /// SuperPoint confidence threshold
+  double sp_threshold = 0.015;
+  /// Whether to apply NMS in SuperPoint
+  bool do_nms = true;
+  /// Whether to use CUDA for SuperPoint
+  bool use_cuda = true;
+  //SPextractor params:
+  int sp_nfeatures = 500;
+  float sp_scaleFactor = 1.2;
+  int sp_nlevels = 4;
+  float sp_iniThFAST = 0.015;
+  float sp_minThFAST =  0.007;
+
 
   /// Parameters used by our feature initialize / triangulator
   ov_core::FeatureInitializerOptions featinit_options;
@@ -465,6 +482,15 @@ struct VioManagerOptions {
       parser->parse_config("grid_x", grid_x);
       parser->parse_config("grid_y", grid_y);
       parser->parse_config("min_px_dist", min_px_dist);
+      parser->parse_config("weights_path", weights_path);
+      parser->parse_config("sp_threshold", sp_threshold);
+      parser->parse_config("do_nms", do_nms);
+      parser->parse_config("use_cuda", use_cuda);
+      parser->parse_config("sp_nfeatures", sp_nfeatures);
+      parser->parse_config("sp_scaleFactor", sp_scaleFactor);
+      parser->parse_config("sp_nlevels", sp_nlevels);
+      parser->parse_config("sp_iniThFAST", sp_iniThFAST);
+      parser->parse_config("sp_minThFAST", sp_minThFAST);
       std::string histogram_method_str = "HISTOGRAM";
       parser->parse_config("histogram_method", histogram_method_str);
       if (histogram_method_str == "NONE") {
@@ -499,6 +525,10 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - hist method: %d\n", (int)histogram_method);
     PRINT_DEBUG("  - knn ratio: %.3f\n", knn_ratio);
     PRINT_DEBUG("  - track frequency: %.1f\n", track_frequency);
+    PRINT_DEBUG("  - weights_path: %s\n", weights_path.c_str());
+    PRINT_DEBUG("  - sp_threshold: %.4f\n", sp_threshold);
+    PRINT_DEBUG("  - do_nms: %d\n", do_nms);
+    PRINT_DEBUG("  - use_cuda: %d\n", use_cuda);
     featinit_options.print(parser);
   }
 
@@ -571,4 +601,4 @@ struct VioManagerOptions {
 
 } // namespace ov_msckf
 
-#endif // OV_MSCKF_VIOMANAGEROPTIONS_H
+#endif // OV_MSCKF_VIOMANAGEROPTIONS_HTrackDescriptor

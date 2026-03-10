@@ -57,7 +57,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3 -Wall -Wuninitialized -Wmaybe-uninit
 
 
 ###TORCH SUPPORT FOR SUPERPOINT
-# Point to libtorch (adjust if needed)
 list(PREPEND CMAKE_PREFIX_PATH "/opt/libtorch")
 find_package(Torch REQUIRED)
 message(STATUS "TORCH: ${Torch_VERSION} | TORCH LIBS: ${TORCH_LIBRARIES}")

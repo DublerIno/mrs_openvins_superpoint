@@ -58,7 +58,7 @@ add_library(ov_core_lib SHARED ${LIBRARY_SOURCES} ${LIBRARY_HEADERS})
 ament_target_dependencies(ov_core_lib rclcpp cv_bridge)
 
 ###jakou verzi potrebuji??
-#to force C++17
+#to force C++17:
 #target_compile_features(ov_core_lib PUBLIC cxx_std_17)
 
 #TORCH for Superpoint

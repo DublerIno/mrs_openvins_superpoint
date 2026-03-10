@@ -362,14 +362,12 @@ void TrackDescriptor::feed_stereo(const CameraData &message, size_t msg_id_left,
   PRINT_ALL("[TIME-DESC]: %.4f seconds for total\n", (rT5 - rT1).total_microseconds() * 1e-6);
 }
 
+//===================Superpoint implementation===================
 void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv::Mat &mask0, std::vector<cv::KeyPoint> &pts0,
                                                   cv::Mat &desc0, std::vector<size_t> &ids0) {
 
   // Assert that we need features
   assert(pts0.empty());
-
-
-
   //SUPERPOINT = GET both keypoints and descriptors
 
   // Extract our features (use FAST with griding)

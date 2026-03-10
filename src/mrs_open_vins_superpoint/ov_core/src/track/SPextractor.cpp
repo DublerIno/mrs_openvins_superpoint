@@ -135,19 +135,33 @@ void ExtractorNode::DivideNode(ExtractorNode &n1, ExtractorNode &n2, ExtractorNo
 }
 
 
-SPextractor::SPextractor(int _nfeatures, float _scaleFactor, int _nlevels,
-         float _iniThFAST, float _minThFAST):
-    nfeatures(_nfeatures), scaleFactor(_scaleFactor), nlevels(_nlevels),
-    iniThFAST(_iniThFAST), minThFAST(_minThFAST)
+SPextractor::SPextractor(int _nfeatures,
+                         float _scaleFactor,
+                         int _nlevels,
+                         float _iniThFAST,
+                         float _minThFAST,
+                         const std::string& _weights_path,
+                         double _sp_threshold,
+                         bool _do_nms,
+                         bool _use_cuda)
+    : nfeatures(_nfeatures),
+      scaleFactor(_scaleFactor),
+      nlevels(_nlevels),
+      iniThFAST(_iniThFAST),
+      minThFAST(_minThFAST),
+      weights_path(_weights_path),
+      sp_threshold(_sp_threshold),
+      do_nms(_do_nms),
+      use_cuda(_use_cuda)
 {
     //load SuperPoint model!! 
     model = make_shared<SuperPoint>(); //model
      //bin weights loading !!!
 
     //!! udelat jako parametr
-    model->load_weights("/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin");
+    //model->load_weights("/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin");
+    model->load_weights(weights_path);
     
-    //torch::load(model, "../data/superpoint.pt"); //path to weights
 
 
     mvScaleFactor.resize(nlevels);
@@ -185,6 +199,7 @@ SPextractor::SPextractor(int _nfeatures, float _scaleFactor, int _nlevels,
 
 }
 
+//HARD CODED PARAMS!!!
 //nfeatures=500, scaleFactor=1.2, nlevels=4, iniThFAST/threshold=0.015, minThFAST/threshold=0.007
 SPextractor::SPextractor()
   : SPextractor(500, 1.2f, 4, 0.015f, 0.007f)

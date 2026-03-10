@@ -51,11 +51,39 @@ public:
    * @param gridy size of grid in the y-direction / v-direction
    * @param minpxdist features need to be at least this number pixels away from each other
    * @param knnratio matching ratio needed (smaller value forces top two descriptors during match to be more different)
+   * 
+   * superpoint params
+   * @param weights_path absolute path to cnn weights
+   * @param do_nms 
+   * @param use_cuda true to use cuda graphical accelaration
+   * @param sp_threshold threshold to select features from heatmap (cnn output)
    */
-  explicit TrackDescriptor(std::unordered_map<size_t, std::shared_ptr<CamBase>> cameras, int numfeats, int numaruco, bool stereo,
-                           HistogramMethod histmethod, int fast_threshold, int gridx, int gridy, int minpxdist, double knnratio)
-      : TrackBase(cameras, numfeats, numaruco, stereo, histmethod), threshold(fast_threshold), grid_x(gridx), grid_y(gridy),
-        min_px_dist(minpxdist), knn_ratio(knnratio) {}
+  explicit TrackDescriptor(std::unordered_map<size_t, std::shared_ptr<CamBase>> cameras,
+                          int numfeats,
+                          int numaruco,
+                          bool stereo,
+                          HistogramMethod histmethod,
+                          int fast_threshold,
+                          int gridx,
+                          int gridy,
+                          int minpxdist,
+                          double knnratio,
+                          std::string weight_path,
+                          double sp_threshold,
+                          bool do_nms,
+                          bool use_cuda,
+                          int sp_nfeatures,
+                          float sp_scaleFactor,
+                          int sp_nlevels,
+                          float sp_iniThFAST,
+                          float sp_minThFAST)
+    : TrackBase(cameras, numfeats, numaruco, stereo, histmethod),
+      threshold(fast_threshold),
+      grid_x(gridx),
+      grid_y(gridy),
+      min_px_dist(minpxdist),
+      knn_ratio(knnratio),
+      sp0(sp_nfeatures, sp_scaleFactor, sp_nlevels, sp_iniThFAST, sp_minThFAST, weights_path, sp_threshold, do_nms, use_cuda)  {}
 
   /**
    * @brief Process a new image
@@ -173,7 +201,14 @@ protected:
   double knn_ratio;
 
   // Descriptor matrices
-  std::unordered_map<size_t, cv::Mat> desc_last;
+  std::unordered_map<size_t, cv::Mat> desc_slast;
+
+
+  //Superpoint params
+  //std::string weights_path_;
+  //double sp_threshold_;
+  //bool do_nms_;
+  //bool use_cuda_;
 };
 
 } // namespace ov_core
