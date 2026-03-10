@@ -3,9 +3,7 @@
 
 
 #include <torch/torch.h>
-
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
+#include <opencv2/opencv.hpp>
 
 #include <vector>
 #include <fstream>
@@ -56,12 +54,18 @@ cv::Mat SPdetect(std::shared_ptr<SuperPoint> model, cv::Mat img, std::vector<cv:
 class SPDetector {
 public:
     SPDetector(std::shared_ptr<SuperPoint> _model);
-    void detect(cv::Mat &image, bool cuda);
+
+    //wrapper fix
+    void setDevice(const torch::Device& device);
+
+    void detect(cv::Mat &image);
     void getKeyPoints(float threshold, int iniX, int maxX, int iniY, int maxY, std::vector<cv::KeyPoint> &keypoints, bool nms);
     void computeDescriptors(const std::vector<cv::KeyPoint> &keypoints, cv::Mat &descriptors);
 
 private:
-    std::shared_ptr<SuperPoint> model;
+    std::shared_ptr<SuperPoint> model_;
+    torch::Device device_{torch::kCPU};
+
     torch::Tensor mProb;
     torch::Tensor mDesc;
 };
