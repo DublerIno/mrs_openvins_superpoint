@@ -18,6 +18,10 @@ find_package(rclcpp_components REQUIRED)
 #Superpoint support
 list(PREPEND CMAKE_PREFIX_PATH "/opt/libtorch")
 find_package(Torch REQUIRED)
+#wont find libtorch.so
+set(CMAKE_BUILD_RPATH "/opt/libtorch/lib")
+set(CMAKE_INSTALL_RPATH "/opt/libtorch/lib")
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 # Describe ROS project
 option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON)
@@ -129,10 +133,18 @@ ament_target_dependencies(test_sim_repeat ${ament_libraries})
 target_link_libraries(test_sim_repeat ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_sim_repeat DESTINATION lib/${PROJECT_NAME})
 
+#changed for libtorch
 add_library(run_subscribe_msckf_composable_component SHARED src/run_subscribe_msckf_component.cpp)
 ament_target_dependencies(run_subscribe_msckf_composable_component ${ament_libraries})
-target_link_libraries(run_subscribe_msckf_composable_component ov_msckf_lib ${thirdparty_libraries})
-#install(TARGETS run_subscribe_msckf_composable DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(run_subscribe_msckf_composable_component
+    ov_msckf_lib
+    ${thirdparty_libraries}
+    ${TORCH_LIBRARIES}
+)
+set_target_properties(run_subscribe_msckf_composable_component PROPERTIES
+  BUILD_RPATH "/opt/libtorch/lib"
+  INSTALL_RPATH "/opt/libtorch/lib"
+)
 
 rclcpp_components_register_node(
     run_subscribe_msckf_composable_component

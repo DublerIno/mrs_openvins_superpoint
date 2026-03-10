@@ -5,7 +5,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(cv_bridge REQUIRED)
 
-#Superpoint support
+###TORCH FOR SUPERPOINT
 list(PREPEND CMAKE_PREFIX_PATH "/opt/libtorch")
 find_package(Torch REQUIRED)
 
@@ -49,31 +49,28 @@ list(APPEND LIBRARY_SOURCES
         src/feat/FeatureDatabase.cpp
         src/feat/FeatureInitializer.cpp
         src/utils/print.cpp
-
+        ###do i need them exposed as lib ?
         src/track/SuperPoint.cpp
         src/track/SPextractor.cpp
-
-
 )
 file(GLOB_RECURSE LIBRARY_HEADERS "src/*.h")
 add_library(ov_core_lib SHARED ${LIBRARY_SOURCES} ${LIBRARY_HEADERS})
-
-
-
 ament_target_dependencies(ov_core_lib rclcpp cv_bridge)
 
-#force C++17
+###jakou verzi potrebuji??
+#to force C++17
 #target_compile_features(ov_core_lib PUBLIC cxx_std_17)
 
+#TORCH for Superpoint
 target_link_libraries(ov_core_lib 
         ${thirdparty_libraries}
         ${TORCH_LIBRARIES}
         )
-
 set_target_properties(ov_core_lib PROPERTIES
   BUILD_RPATH "${TORCH_INSTALL_PREFIX}/lib"
   INSTALL_RPATH "${TORCH_INSTALL_PREFIX}/lib"
 )
+###
 
 target_include_directories(ov_core_lib PUBLIC src/)
 install(TARGETS ov_core_lib

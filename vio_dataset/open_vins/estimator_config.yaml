@@ -82,7 +82,10 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 
 # our front-end feature tracking parameters
 # we have a KLT and descriptor based (KLT is better implemented...)
-use_klt: true # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+
+#FOR superpoint we need false - so TracKDescriptor is used which is overwritten by Superpoint
+use_klt: false # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+
 num_pts: 200 # number of points (per camera) we will extract and try to track
 # num_pts: 200 # number of points (per camera) we will extract and try to track
 # fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)

@@ -2,6 +2,9 @@ build:
   mixin:
     - rel-with-deb-info
     - compile-commands
+  cmake-args:
+    - -DCMAKE_CUDA_ARCHITECTURES=86
+
   allow-overriding: [
     "mrs_uav_flightforge_simulator",
     "ov_core",

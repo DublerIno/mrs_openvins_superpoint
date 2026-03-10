@@ -23,14 +23,14 @@ message(STATUS "OPENCV: " ${OpenCV_VERSION} " | BOOST: " ${Boost_VERSION} " | CE
 
 
 
-#torch ? 
+###TORCH for superpoint
 list(PREPEND CMAKE_PREFIX_PATH "/opt/libtorch")
 find_package(Torch REQUIRED)
 message(STATUS "TORCH: ${Torch_VERSION} | TORCH LIBS: ${TORCH_LIBRARIES}")
 
 
 # By default we build with ROS, but you can disable this and just build as a library
-option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON)
+option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON) 
 
 # If we will compile with aruco support
 option(ENABLE_ARUCO_TAGS "Enable or disable aruco tag (disable if no contrib modules)" ON)

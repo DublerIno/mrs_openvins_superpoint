@@ -14,9 +14,6 @@ message(STATUS "OPENCV: " ${OpenCV_VERSION} " | BOOST: " ${Boost_VERSION})
 # By default we build with ROS, but you can disable this and just build as a library
 option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON)
 
-#bruh it wont build without superpoint
-option(ENABLE_SUPERPOINT "Enable SuperPoint (libtorch) feature extraction" OFF)
-
 # If we will compile with aruco support
 option(ENABLE_ARUCO_TAGS "Enable or disable aruco tag (disable if no contrib modules)" ON)
 if (NOT ENABLE_ARUCO_TAGS)
@@ -40,7 +37,8 @@ if (PYTHONLIBS_FOUND AND NOT DISABLE_MATPLOTLIB)
     list(APPEND thirdparty_libraries ${PYTHON_LIBRARIES})
 endif ()
 
-
+###jakou verzi potrebuji??
+#to force C++17:
 #TORCH needs c++17 ??
 
 # We need c++14 for ROS2, thus just require it for everybody
@@ -58,13 +56,11 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-sign
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3 -Wall -Wuninitialized -Wmaybe-uninitialized -fno-omit-frame-pointer")
 
 
-#TORCH SUPPORT FOR SUPERPOINT
-if (ENABLE_SUPERPOINT)
-  # Point to libtorch (adjust if needed)
-  list(PREPEND CMAKE_PREFIX_PATH "/opt/libtorch")
-  find_package(Torch REQUIRED)
-  message(STATUS "TORCH: ${Torch_VERSION} | TORCH LIBS: ${TORCH_LIBRARIES}")
-endif()
+###TORCH SUPPORT FOR SUPERPOINT
+# Point to libtorch (adjust if needed)
+list(PREPEND CMAKE_PREFIX_PATH "/opt/libtorch")
+find_package(Torch REQUIRED)
+message(STATUS "TORCH: ${Torch_VERSION} | TORCH LIBS: ${TORCH_LIBRARIES}")
 
 
 # Find our ROS version!

@@ -4,6 +4,10 @@ socket_name: mrs
 attach: false
 tmux_options: -f /etc/ctu-mrs/tmux.conf
 startup_window: rosbag
+
+pre_window: export UAV_NAME=uav1; export USE_SIM_TIME="true"; export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+
+
 windows:
   - rosbag:
       layout: even-vertical
@@ -12,3 +16,8 @@ windows:
         - ./republish.sh
         - ./rviz.sh
         - ros2 run rmw_zenoh_cpp rmw_zenohd
+
+  - vio:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_open_vins_core open_vins.launch.py config_path:=./open_vins/estimator_config.yaml

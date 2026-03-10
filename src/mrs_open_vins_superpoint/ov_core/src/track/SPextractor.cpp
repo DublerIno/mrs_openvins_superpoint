@@ -143,7 +143,9 @@ SPextractor::SPextractor(int _nfeatures, float _scaleFactor, int _nlevels,
     //load SuperPoint model!! 
     model = make_shared<SuperPoint>(); //model
      //bin weights loading !!!
-    model->load_weights("/home/dublerino/ws_examples/src/open_vins/ov_core/src/track/superpoint_model_weights.bin");
+
+    //!! udelat jako parametr
+    model->load_weights("/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin");
     
     //torch::load(model, "../data/superpoint.pt"); //path to weights
 
