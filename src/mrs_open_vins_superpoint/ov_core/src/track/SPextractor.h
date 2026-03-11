@@ -126,6 +126,8 @@ protected:
     std::vector<float> mvInvLevelSigma2;
 
     std::shared_ptr<SuperPoint> model;
+
+    torch::Device device_ = torch::kCPU;
 };
 
 typedef SPextractor ORBextractor;

@@ -154,16 +154,26 @@ SPextractor::SPextractor(int _nfeatures,
       do_nms(_do_nms),
       use_cuda(_use_cuda)
 {
+  
     //load SuperPoint model!! 
     model = make_shared<SuperPoint>(); //model
      //bin weights loading !!!
 
     //!! udelat jako parametr
     //model->load_weights("/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin");
-    
-    std::cout << "Loading SuperPoint model weights from " << weights_path << std::endl;
-    model->load_weights(weights_path);
+    try {
+        model->load_weights(weights_path);
+    } catch (const std::exception& e) {
+        throw std::runtime_error("Failed to load SuperPoint weights from '" + weights_path + "': " + e.what());
+    }
 
+    if (use_cuda && torch::cuda::is_available()) {
+        device_ = torch::Device(torch::kCUDA);
+    } else {
+        device_ = torch::Device(torch::kCPU);
+    }
+    model->to(device_);
+    model->eval();
 
 
     mvScaleFactor.resize(nlevels);
@@ -450,7 +460,14 @@ void SPextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoint
     for (int level = 0; level < nlevels; ++level)
     {
         SPDetector detector(model);
-        detector.detect(mvImagePyramid[level], false);
+
+        torch::Device device(torch::kCPU);
+        if (use_cuda && torch::cuda::is_available()) {
+            device = torch::Device(torch::kCUDA);
+        }
+        detector.setDevice(device);
+
+        detector.detect(mvImagePyramid[level]);
 
         const int minBorderX = EDGE_THRESHOLD-3;
         const int minBorderY = minBorderX;
