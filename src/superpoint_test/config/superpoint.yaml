@@ -1,0 +1,13 @@
+/**:
+  ros__parameters:
+    weights_path: "/home/sponer/ws_superpoint/src/superpoint_test/superpoint_model_weights.bin"
+    image_topic: "/camera/image"
+    threshold: 0.015
+    do_nms: true
+    use_cuda: false
+    image_size: [320, 180]   # width, height
+
+      
+#  threshold: 0.015
+# [320, 180] 
+# 640 x 360 for my webcam - 16:9
