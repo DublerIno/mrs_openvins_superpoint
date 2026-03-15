@@ -382,7 +382,12 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   cv::Mat desc0_ext;
   std::vector<cv::KeyPoint> pts0_ext;
   this->sp0(img0,cv::Mat(),pts0_ext,desc0_ext); //syntax for calling operator() of SPextractor class
-
+  
+  //jak to vypada?
+  std::cout << "desc0_ext size: "
+          << desc0_ext.rows << " x "
+          << desc0_ext.cols << std::endl;
+  std::cout << "pts0_ext size: " << pts0_ext.size() << std::endl;
 
   // Create a 2D occupancy grid for this current image
   // Note that we scale this down, so that each grid point is equal to a set of pixels

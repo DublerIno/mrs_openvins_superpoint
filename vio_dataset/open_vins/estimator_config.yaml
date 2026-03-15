@@ -113,7 +113,8 @@ sp_nfeatures:  1000
 sp_scaleFactor: 5.0
 sp_nlevels: 2
 sp_iniThFAST: 0.4
-sp_minThFAST: 0.3
+sp_minThFAST: 0.01
+
 
 
 

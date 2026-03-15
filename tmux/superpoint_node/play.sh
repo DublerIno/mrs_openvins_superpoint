@@ -1,1 +1,1 @@
-ros2 bag play ./outdoor.mcap
+ros2 bag play ./outdoor.mcap -r 0.1 
