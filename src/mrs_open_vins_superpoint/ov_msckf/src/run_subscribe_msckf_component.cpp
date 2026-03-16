@@ -84,10 +84,10 @@ class SubscribeMSCKF : public rclcpp::Node {
             std::shared_ptr<rclcpp::Node> node = shared_from_this();
             parser->set_node(node);
 
-            // Verbosity
+            // Verbosity = FORCED DEBUG
             std::string verbosity = "DEBUG";
             parser->parse_config("verbosity", verbosity);
-            ov_core::Printer::setPrintLevel(verbosity);
+            ov_core::Printer::setPrintLevel("DEBUG");
 
             // Create our VIO system
             VioManagerOptions params;
