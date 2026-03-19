@@ -76,6 +76,9 @@ const int EDGE_THRESHOLD = 19;
 
 const float factorPI = (float)(CV_PI/180.f);
 
+//QUADTREE IMPLEMENTATION TO DISTRIBUTE FEATURES UNIFORMLY IN THE IMAGE
+//cast datove struktury pro rychle rozdelovani klicovych bodu do ctyrctvercu a rekurzivni deleni, dokud nedosahneme pozadovaneho poctu klicovych bodu 
+//nebo dokud kazdy ctverec nebude obsahovat pouze jeden klicovy bod
 void ExtractorNode::DivideNode(ExtractorNode &n1, ExtractorNode &n2, ExtractorNode &n3, ExtractorNode &n4)
 {
     const int halfX = ceil(static_cast<float>(UR.x-UL.x)/2);
@@ -134,7 +137,8 @@ void ExtractorNode::DivideNode(ExtractorNode &n1, ExtractorNode &n2, ExtractorNo
 
 }
 
-
+//Konstruktor
+//zaroven vypocitavame parametry pro pyramidy a pocet klicovych bodu pro kazdou uroven pyramidy - Image pyramid level
 SPextractor::SPextractor(int _nfeatures,
                          float _scaleFactor,
                          int _nlevels,
@@ -175,7 +179,7 @@ SPextractor::SPextractor(int _nfeatures,
     model->to(device_);
     model->eval();
 
-
+    //vypocet parametru pro pyramidy a pocet klicovych bodu pro kazdou uroven pyramidy 
     mvScaleFactor.resize(nlevels);
     mvLevelSigma2.resize(nlevels);
     mvScaleFactor[0]=1.0f;
@@ -219,6 +223,8 @@ SPextractor::SPextractor()
 {}
 */
 
+//v operator() a v nem se vola ComputePyramid a ComputeKeyPointsOctTree, 
+//distribuce klicovych bodu do ctvercu a rekurzivni deleni
 vector<cv::KeyPoint> SPextractor::DistributeOctTree(const vector<cv::KeyPoint>& vToDistributeKeys, const int &minX,
                                        const int &maxX, const int &minY, const int &maxY, const int &N, const int &level)
 {
@@ -445,7 +451,8 @@ vector<cv::KeyPoint> SPextractor::DistributeOctTree(const vector<cv::KeyPoint>& 
     return vResultKeys;
 }
 
-
+///vola se v operator()
+//PUSTI FORWARD PASS sp pro kazdy level pyramidy a spusti distribuci
 void SPextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoints, cv::Mat &_desc)
 {
     if (nlevels <= 0 || nlevels > 16) {
@@ -560,6 +567,7 @@ void SPextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoint
 }
 
 // Compute the ORB features and descriptors on an image.
+//pusti se pres sp_instance(...)
 void SPextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPoint>& _keypoints,
                       OutputArray _descriptors)
 { 
@@ -581,6 +589,7 @@ void SPextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPoi
     cout << descriptors.rows << endl;
 
 
+    //pripoji deskriprtory ke zbylim klicovym bodum
     int nkeypoints = 0;
     for (int level = 0; level < nlevels; ++level)
         nkeypoints += (int)allKeypoints[level].size();
@@ -595,6 +604,8 @@ void SPextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPoi
     _keypoints.clear();
     _keypoints.reserve(nkeypoints);
 
+
+    //Scale keypoint coordinates
     //int offset = 0;
     for (int level = 0; level < nlevels; ++level)
     {
