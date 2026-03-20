@@ -24,8 +24,6 @@
 
 #include "TrackBase.h"
 
-#include "SPextractor.h"
-
 namespace ov_core {
 
 /**
@@ -51,39 +49,11 @@ public:
    * @param gridy size of grid in the y-direction / v-direction
    * @param minpxdist features need to be at least this number pixels away from each other
    * @param knnratio matching ratio needed (smaller value forces top two descriptors during match to be more different)
-   * 
-   * superpoint params
-   * @param weights_path absolute path to cnn weights
-   * @param do_nms 
-   * @param use_cuda true to use cuda graphical accelaration
-   * @param sp_threshold threshold to select features from heatmap (cnn output)
    */
-  explicit TrackDescriptor(std::unordered_map<size_t, std::shared_ptr<CamBase>> cameras,
-                          int numfeats,
-                          int numaruco,
-                          bool stereo,
-                          HistogramMethod histmethod,
-                          int fast_threshold,
-                          int gridx,
-                          int gridy,
-                          int minpxdist,
-                          double knnratio,
-                          std::string weights_path,
-                          double sp_threshold,
-                          bool do_nms,
-                          bool use_cuda,
-                          int sp_nfeatures,
-                          float sp_scaleFactor,
-                          int sp_nlevels,
-                          float sp_iniThFAST,
-                          float sp_minThFAST)
-    : TrackBase(cameras, numfeats, numaruco, stereo, histmethod),
-      threshold(fast_threshold),
-      grid_x(gridx),
-      grid_y(gridy),
-      min_px_dist(minpxdist),
-      knn_ratio(knnratio),
-      sp0(sp_nfeatures, sp_scaleFactor, sp_nlevels, sp_iniThFAST, sp_minThFAST, weights_path, sp_threshold, do_nms, use_cuda)  {}
+  explicit TrackDescriptor(std::unordered_map<size_t, std::shared_ptr<CamBase>> cameras, int numfeats, int numaruco, bool stereo,
+                           HistogramMethod histmethod, int fast_threshold, int gridx, int gridy, int minpxdist, double knnratio)
+      : TrackBase(cameras, numfeats, numaruco, stereo, histmethod), threshold(fast_threshold), grid_x(gridx), grid_y(gridy),
+        min_px_dist(minpxdist), knn_ratio(knnratio) {}
 
   /**
    * @brief Process a new image
@@ -175,18 +145,12 @@ protected:
   // Timing variables
   boost::posix_time::ptime rT1, rT2, rT3, rT4, rT5, rT6, rT7;
 
-  // Our orb extractor - 
-  
-  //REMOVE after stereo - now for compile
+  // Our orb extractor
   cv::Ptr<cv::ORB> orb0 = cv::ORB::create();
   cv::Ptr<cv::ORB> orb1 = cv::ORB::create();
 
-  
-
   // Our descriptor matcher
-  
-  //cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create("BruteForce-Hamming");
-  cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create("BruteForce"); // L2
+  cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create("BruteForce-Hamming");
 
   // Parameters for our FAST grid detector
   int threshold;
@@ -202,13 +166,6 @@ protected:
 
   // Descriptor matrices
   std::unordered_map<size_t, cv::Mat> desc_last;
-
-  ORB_SLAM2::ORBextractor sp0;
-  //Superpoint params
-  //std::string weights_path_;
-  //double sp_threshold_;
-  //bool do_nms_;
-  //bool use_cuda_;
 };
 
 } // namespace ov_core

@@ -142,43 +142,21 @@ int main(int argc, char **argv) {
   }
 
   // Lets make a feature extractor
-  //extractor = new TrackKLT(cameras, num_pts, num_aruco, !use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist);
-  //superpoint params
-  std::string _weights_path = "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin";
-  double _sp_threshold = 0.015;
-  bool _do_nms = true;
-  bool _use_cuda = true;
-  int sp_nfeatures = 500;
-  float sp_scaleFactor = 1.2; 
-  int sp_nlevels = 4;
-  float sp_iniThFAST = 0.015;
-  float sp_minThFAST = 0.007;
-  extractor = new TrackDescriptor(cameras, num_pts, num_aruco, !use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist, knn_ratio, _weights_path, _sp_threshold,_do_nms, _use_cuda, sp_nfeatures, sp_scaleFactor, sp_nlevels, sp_iniThFAST,sp_minThFAST);
-  
-    // knn_ratio); extractor = new TrackAruco(cameras, num_aruco, !use_stereo, method, do_downsizing);
+  extractor = new TrackKLT(cameras, num_pts, num_aruco, !use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist);
+  // extractor = new TrackDescriptor(cameras, num_pts, num_aruco, !use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist,
+  // knn_ratio); extractor = new TrackAruco(cameras, num_aruco, !use_stereo, method, do_downsizing);
 
   //===================================================================================
   //===================================================================================
   //===================================================================================
 
   // Open the first webcam (0=laptop cam, 1=usb device)
-  cv::VideoCapture cap(0, cv::CAP_V4L2);
-  
-  
-
-
-
-
+  cv::VideoCapture cap;
   if (!cap.open(0)) {
     PRINT_ERROR(RED "Unable to open a webcam feed!\n" RESET);
     return EXIT_FAILURE;
   }
 
-
-
-
-  cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-  cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
   //===================================================================================
   //===================================================================================
   //===================================================================================
@@ -206,27 +184,16 @@ int main(int argc, char **argv) {
     if (cv::waitKey(10) == 27)
       break;
 
-      
-    cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
     // Convert to grayscale if not
     if (frame.channels() != 1)
-      cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
+      cv::cvtColor(frame, frame, cv::COLOR_RGB2GRAY);
 
-
-    
     // Else lets track this image
     ov_core::CameraData message;
     message.timestamp = current_time;
     message.sensor_ids.push_back(0);
     message.images.push_back(frame);
     message.masks.push_back(cv::Mat::zeros(cv::Size(frame.cols, frame.rows), CV_8UC1));
-
-
-
-    std::cout << "frame " << frame.cols << "x" << frame.rows
-          << " type=" << frame.type() << " empty=" << frame.empty() << std::endl;
-
-
     extractor->feed_new_camera(message);
 
     // Display the resulting tracks

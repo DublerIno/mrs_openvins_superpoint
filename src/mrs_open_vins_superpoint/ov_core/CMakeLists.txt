@@ -37,30 +37,17 @@ if (PYTHONLIBS_FOUND AND NOT DISABLE_MATPLOTLIB)
     list(APPEND thirdparty_libraries ${PYTHON_LIBRARIES})
 endif ()
 
-###jakou verzi potrebuji??
-#to force C++17:
-#TORCH needs c++17 ??
-
 # We need c++14 for ROS2, thus just require it for everybody
 # NOTE: To future self, hope this isn't an issue...
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-
-
 # Enable compile optimizations
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-signed-zeros -fno-math-errno -funroll-loops")
 
 # Enable debug flags (use if you want to debug in gdb)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3 -Wall -Wuninitialized -Wmaybe-uninitialized -fno-omit-frame-pointer")
-
-
-###TORCH SUPPORT FOR SUPERPOINT
-list(PREPEND CMAKE_PREFIX_PATH "/opt/libtorch")
-find_package(Torch REQUIRED)
-message(STATUS "TORCH: ${Torch_VERSION} | TORCH LIBS: ${TORCH_LIBRARIES}")
-
 
 # Find our ROS version!
 # NOTE: Default to using the ROS1 package if both are in our enviroment

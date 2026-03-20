@@ -21,7 +21,6 @@
 
 #include "TrackDescriptor.h"
 
-//NEW
 #include <opencv2/features2d.hpp>
 
 #include "Grider_FAST.h"
@@ -31,7 +30,6 @@
 
 using namespace ov_core;
 
-//NEW Function - chooses camera based on image message
 void TrackDescriptor::feed_new_camera(const CameraData &message) {
 
   // Error check that we have all the data
@@ -47,8 +45,6 @@ void TrackDescriptor::feed_new_camera(const CameraData &message) {
   // If we are doing binocular tracking, then we should parallize our tracking
   size_t num_images = message.images.size();
   if (num_images == 1) {
-    //make sure i use correct model
-    std::cout << "Mono image received" << std::endl;
     feed_monocular(message, 0);
   } else if (num_images == 2 && use_stereo) {
     feed_stereo(message, 0, 1);
@@ -109,14 +105,9 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
 
   // First, extract new descriptors for this new image
   perform_detection_monocular(img, mask, pts_new, desc_new, ids_new);
-
-  //before perform_detection_monocular(img, pts_new, desc_new, ids_new);
-
   rT2 = boost::posix_time::microsec_clock::local_time();
 
-
-  //Match
-  // Our matches temporally left to left
+  // Our matches temporally
   std::vector<cv::DMatch> matches_ll;
 
   // Lets match temporally
@@ -167,7 +158,6 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   // PRINT_DEBUG("LtoL = %d | good = %d | fromlast = %d\n",(int)matches_ll.size(),(int)good_left.size(),num_tracklast);
 
   // Move forward in time
-  // Save current as last - lock only for this small amount of time
   {
     std::lock_guard<std::mutex> lckv(mtx_last_vars);
     img_last[cam_id] = img;
@@ -362,32 +352,19 @@ void TrackDescriptor::feed_stereo(const CameraData &message, size_t msg_id_left,
   PRINT_ALL("[TIME-DESC]: %.4f seconds for total\n", (rT5 - rT1).total_microseconds() * 1e-6);
 }
 
-//===================Superpoint implementation===================
 void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv::Mat &mask0, std::vector<cv::KeyPoint> &pts0,
                                                   cv::Mat &desc0, std::vector<size_t> &ids0) {
 
   // Assert that we need features
   assert(pts0.empty());
-  //SUPERPOINT = GET both keypoints and descriptors
 
   // Extract our features (use FAST with griding)
-  //std::vector<cv::KeyPoint> pts0_ext;
-  //cv::Mat desc0_ext;
-  //Grider_FAST::perform_griding(img0, mask0, pts0_ext, num_features, grid_x, grid_y, threshold, true, desc0_ext);
+  std::vector<cv::KeyPoint> pts0_ext;
+  Grider_FAST::perform_griding(img0, mask0, pts0_ext, num_features, grid_x, grid_y, threshold, true);
 
   // For all new points, extract their descriptors
-
-
-  //this->orb0->compute(img0, pts0_ext, desc0_ext);
   cv::Mat desc0_ext;
-  std::vector<cv::KeyPoint> pts0_ext;
-  this->sp0(img0,cv::Mat(),pts0_ext,desc0_ext); //syntax for calling operator() of SPextractor class
-  
-  //jak to vypada?
-  std::cout << "desc0_ext size: "
-          << desc0_ext.rows << " x "
-          << desc0_ext.cols << std::endl;
-  std::cout << "pts0_ext size: " << pts0_ext.size() << std::endl;
+  this->orb0->compute(img0, pts0_ext, desc0_ext);
 
   // Create a 2D occupancy grid for this current image
   // Note that we scale this down, so that each grid point is equal to a set of pixels
@@ -423,7 +400,6 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   }
 }
 
-//not superpoint yet
 void TrackDescriptor::perform_detection_stereo(const cv::Mat &img0, const cv::Mat &img1, const cv::Mat &mask0, const cv::Mat &mask1,
                                                std::vector<cv::KeyPoint> &pts0, std::vector<cv::KeyPoint> &pts1, cv::Mat &desc0,
                                                cv::Mat &desc1, size_t cam_id0, size_t cam_id1, std::vector<size_t> &ids0,
@@ -501,7 +477,6 @@ void TrackDescriptor::perform_detection_stereo(const cv::Mat &img0, const cv::Ma
   }
 }
 
-// will it work with superpoimnt descriptors?
 void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const std::vector<cv::KeyPoint> &pts1, const cv::Mat &desc0,
                                    const cv::Mat &desc1, size_t id0, size_t id1, std::vector<cv::DMatch> &matches) {
 
