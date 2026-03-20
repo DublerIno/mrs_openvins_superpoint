@@ -6,6 +6,7 @@ find_package(rclcpp REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -13,6 +14,7 @@ find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(ov_core REQUIRED)
 find_package(ov_init REQUIRED)
+find_package(rclcpp_components REQUIRED)
 
 # Describe ROS project
 option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON)
@@ -40,6 +42,7 @@ list(APPEND ament_libraries
         tf2_ros
         tf2_geometry_msgs
         std_msgs
+        std_srvs
         geometry_msgs
         sensor_msgs
         nav_msgs
@@ -47,6 +50,7 @@ list(APPEND ament_libraries
         image_transport
         ov_core
         ov_init
+        rclcpp_components
 )
 
 ##################################################
@@ -108,9 +112,27 @@ ament_target_dependencies(test_sim_repeat ${ament_libraries})
 target_link_libraries(test_sim_repeat ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_sim_repeat DESTINATION lib/${PROJECT_NAME})
 
+add_library(run_subscribe_msckf_composable_component SHARED src/run_subscribe_msckf_component.cpp)
+ament_target_dependencies(run_subscribe_msckf_composable_component ${ament_libraries})
+target_link_libraries(run_subscribe_msckf_composable_component ov_msckf_lib ${thirdparty_libraries})
+#install(TARGETS run_subscribe_msckf_composable DESTINATION lib/${PROJECT_NAME})
+
+rclcpp_components_register_node(
+    run_subscribe_msckf_composable_component
+    PLUGIN "msckf_component::SubscribeMSCKF"
+    EXECUTABLE run_subscribe_msckf_composable
+)
+
 # Install launch and config directories
 install(DIRECTORY launch/ DESTINATION share/${PROJECT_NAME}/launch/)
 install(DIRECTORY ../config/ DESTINATION share/${PROJECT_NAME}/config/)
+
+install(TARGETS run_subscribe_msckf_composable_component
+  EXPORT export_run_subscribe_msckf_composable
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 
 # finally define this as the package
 ament_package()

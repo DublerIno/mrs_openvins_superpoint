@@ -9,15 +9,6 @@ if (NOT OpenCV_FOUND)
     find_package(OpenCV 4 REQUIRED)
 endif ()
 find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time)
-
-#chatgpt glog cmake error fix
-find_library(GLOG_LIBRARIES glog)
-find_path(GLOG_INCLUDE_DIR glog/logging.h)
-add_library(glog::glog UNKNOWN IMPORTED)
-set_target_properties(glog::glog PROPERTIES  
-  IMPORTED_LOCATION ${GLOG_LIBRARIES}  
-  INTERFACE_INCLUDE_DIRECTORIES ${GLOG_INCLUDE_DIR})
-
 find_package(Ceres REQUIRED)
 message(STATUS "OPENCV: " ${OpenCV_VERSION} " | BOOST: " ${Boost_VERSION} " | CERES: " ${Ceres_VERSION})
 

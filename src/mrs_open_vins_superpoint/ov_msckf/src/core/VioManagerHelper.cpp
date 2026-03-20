@@ -39,40 +39,80 @@ using namespace ov_msckf;
 
 void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
 
-  // Initialize the system
+  // 1. Lock the state to prevent propagation/updates during reset
+  std::lock_guard<std::mutex> lock(state->_mutex_state);
+
+  // 2. PURGE OLD MEMORY: Clear clones and SLAM features
+  state->_clones_IMU.clear();       //
+  state->_features_SLAM.clear();    //
+
+  // 3. RESET VARIABLES: Revert the variables vector to its baseline (IMU + Calibration)
+  // We keep only the first few variables (IMU, IMU-Intrinsics, Cam-Intrinsics, etc.)
+  // The safest way is to rebuild the _variables list based on the constructor logic
+  std::vector<std::shared_ptr<ov_type::Type>> baseline_vars;
+  baseline_vars.push_back(state->_imu);
+  
+  if (state->_options.do_calib_imu_intrinsics) {
+      baseline_vars.push_back(state->_calib_imu_dw);
+      baseline_vars.push_back(state->_calib_imu_da);
+      if (state->_options.do_calib_imu_g_sensitivity) baseline_vars.push_back(state->_calib_imu_tg);
+      if (state->_options.imu_model == StateOptions::ImuModel::KALIBR) 
+          baseline_vars.push_back(state->_calib_imu_GYROtoIMU);
+      else baseline_vars.push_back(state->_calib_imu_ACCtoIMU);
+  }
+  
+  if (state->_options.do_calib_camera_timeoffset) baseline_vars.push_back(state->_calib_dt_CAMtoIMU);
+  
+  for (int i = 0; i < state->_options.num_cameras; i++) {
+      if (state->_options.do_calib_camera_pose) baseline_vars.push_back(state->_calib_IMUtoCAM.at(i));
+      if (state->_options.do_calib_camera_intrinsics) baseline_vars.push_back(state->_cam_intrinsics.at(i));
+  }
+  
+  // Update state variables and re-assign IDs
+  state->_variables = baseline_vars;
+  int current_id = 0;
+  for (auto &var : state->_variables) {
+      var->set_local_id(current_id);
+      current_id += var->size();
+  }
+
+  // 4. RESIZE COVARIANCE: Shrink the covariance back to the baseline size
+  state->_Cov = 1e-3 * Eigen::MatrixXd::Identity(current_id, current_id);
+
+  // 5. INJECT STATE: Set IMU values
   state->_imu->set_value(imustate.block(1, 0, 16, 1));
   state->_imu->set_fej(imustate.block(1, 0, 16, 1));
 
-  // Fix the global yaw and position gauge freedoms
-  // TODO: Why does this break out simulation consistency metrics?
+  // 6. INITIAL COVARIANCE: Set the uncertainty for the restart
   std::vector<std::shared_ptr<ov_type::Type>> order = {state->_imu};
-  Eigen::MatrixXd Cov = std::pow(0.02, 2) * Eigen::MatrixXd::Identity(state->_imu->size(), state->_imu->size());
-  Cov.block(0, 0, 3, 3) = std::pow(0.017, 2) * Eigen::Matrix3d::Identity(); // q
-  Cov.block(3, 3, 3, 3) = std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // p
-  Cov.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v (static)
-  StateHelper::set_initial_covariance(state, Cov, order);
+  Eigen::MatrixXd Cov_imu = std::pow(0.02, 2) * Eigen::MatrixXd::Identity(state->_imu->size(), state->_imu->size());
+  Cov_imu.block(0, 0, 3, 3) = std::pow(0.017, 2) * Eigen::Matrix3d::Identity(); // q uncertainty
+  Cov_imu.block(3, 3, 3, 3) = std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // p uncertainty
+  Cov_imu.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v uncertainty
+  StateHelper::set_initial_covariance(state, Cov_imu, order);
 
-  // Set the state time
+  trackFEATS->get_feature_database()->cleanup(); // PURGE ALL TRACKS
+  if (trackARUCO != nullptr) trackARUCO->get_feature_database()->cleanup();
+
+  // 8. Finalize basic initialization flags
   state->_timestamp = imustate(0, 0);
   startup_time = imustate(0, 0);
   is_initialized_vio = true;
 
-  // Cleanup any features older then the initialization time
-  trackFEATS->get_feature_database()->cleanup_measurements(state->_timestamp);
-  if (trackARUCO != nullptr) {
-    trackARUCO->get_feature_database()->cleanup_measurements(state->_timestamp);
-  }
+  // 3. Clear SLAM features
+  state->_features_SLAM.clear();
 
-  // Print what we init'ed with
-  PRINT_DEBUG(GREEN "[INIT]: INITIALIZED FROM GROUNDTRUTH FILE!!!!!\n" RESET);
-  PRINT_DEBUG(GREEN "[INIT]: orientation = %.4f, %.4f, %.4f, %.4f\n" RESET, state->_imu->quat()(0), state->_imu->quat()(1),
-              state->_imu->quat()(2), state->_imu->quat()(3));
-  PRINT_DEBUG(GREEN "[INIT]: bias gyro = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_g()(0), state->_imu->bias_g()(1),
-              state->_imu->bias_g()(2));
-  PRINT_DEBUG(GREEN "[INIT]: velocity = %.4f, %.4f, %.4f\n" RESET, state->_imu->vel()(0), state->_imu->vel()(1), state->_imu->vel()(2));
-  PRINT_DEBUG(GREEN "[INIT]: bias accel = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_a()(0), state->_imu->bias_a()(1),
-              state->_imu->bias_a()(2));
-  PRINT_DEBUG(GREEN "[INIT]: position = %.4f, %.4f, %.4f\n" RESET, state->_imu->pos()(0), state->_imu->pos()(1), state->_imu->pos()(2));
+  // 6. SEED THE FIRST CLONE: Use StateHelper to properly augment covariance
+  // This replaces the manual map insertion that caused the diagonal errors
+  StateHelper::augment_clone(state, Eigen::Vector3d::Zero());
+
+  /* // 9. SEED THE FIRST CLONE (Prevents map::at crash) */
+  /* // We must clone the current IMU pose and add it to the clones map. */
+  /* // This gives the triangulation logic a pose for the current timestamp. */
+  /* std::shared_ptr<PoseJPL> init_pose = std::dynamic_pointer_cast<PoseJPL>(state->_imu->pose()->clone()); */
+  /* state->_clones_IMU[state->_timestamp] = init_pose; */
+
+  PRINT_DEBUG(GREEN "[INIT]: DEEP RESET SUCCESSFUL. RESTARTED MID-AIR.\n" RESET);
 }
 
 bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
@@ -188,6 +228,12 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
 }
 
 void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message) {
+
+  // SAFETY GUARD: Check if the required clone exists before calling .at()
+  if (state->_clones_IMU.find(message.timestamp) == state->_clones_IMU.end()) {
+    PRINT_WARNING(YELLOW "[RETRI]: Missing clone for timestamp %.4f. Skipping triangulation.\n" RESET, message.timestamp);
+    return;
+  }
 
   // Start timing
   boost::posix_time::ptime retri_rT1, retri_rT2, retri_rT3;

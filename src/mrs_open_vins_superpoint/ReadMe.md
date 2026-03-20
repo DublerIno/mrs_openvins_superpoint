@@ -21,6 +21,18 @@ details on what the system supports.
 
 ## ROS2
 
+There are two ways tu run OpenVINS on ROS2 jazzy:
+  - building the refactored version using Ceres 2.2.0
+  - builing original version which requires building Ceres 2.0.0 before first
+
+### Refactored version
+
+This version is using the latest Ceres 2.2.0. Previous version (for ROS2 Humble) was using Ceres 2.0.0, which has different API. Api changed in version 2.2.1.0 while still supporting the 2.0.0 version API, which made it optional to migrate or stay with the old API. The old API was definitely removed in the Ceres 2.2.0. There not much changes in the code. The two changes are:
+  - changing some *.h* includes to *.hpp*
+  - replacement of *State_JPLQuatLocal* with *ceres::QuaternionManifold*. Original *State_JPLQuatLocal* was extending *ceres::LocalParameterization* which was in Ceres 2.2.0 replaced by *ceres::Manifold*. However, *ceres::Manifold* is abstract class. There are some drop-in replacements ready in Ceres 2.2.0, like *ceres::QuaternionManifold* we used. The only problem is that *ceres::QuaternionManifold* uses Hamiltonian quaternion notation, while the originally used *State_JPLQuatLocal* implemented JPL quaternion notation (implemented by authors). However, this change of notation should be fine - the way the math is defined should not have any effect on the results and the error term definition used by OpenVINS.
+
+## ROS2
+
 This fork can run under the ROS2 Jazzy. For now, it is necessary to build Ceres solver library 2.0.0 as ROS2 Jazzy runs on the Ubuntu 24.04 where only Ceres 2.2.0 is available. This is only temporary solution and it will be solved properly later.
 
 ### Building Ceres 2.0.0
@@ -62,6 +74,29 @@ There are two possible problems:
 Keep in mind this is not final solution. Final solution would be refactoring OpenVINS code, so it includes changes made between Ceres versions 2.0.0 and 2.1.0 ([see Ceres changelog](http://ceres-solver.org/version_history.html)). Particularly this point is relevant:
 
     2. Manifold is the new LocalParameterization. Version 2.1 is the transition release where users can use both LocalParameterization as well as     Manifold objects as they transition from the former to the latter. LocalParameterization will be removed in version 2.2. There should be no numerical change to the results as a result of this change. (Sameer Agarwal, Johannes Beck, Sergiu Deitsch)
+
+### IMU source topic
+
+There are two places to define which IMU topic should the OpenVINS use:
+
+  1. `topic_imu` node parameter. Value of this parameter is provided in the launchfile `subscribe_composable.launch.py`. (more on this in the next chapter)
+  2. `kalibr_imu_chain.yaml` config file. There is a `rostopic:` parameter.
+
+The `topic_imu` parameter has higher priority. If this parameter is set, then the value from the `kalibr_imu_chain.yaml` is ignored.
+
+### IMU filter usage
+
+User can optionally add IMU filter between the the IMU driver and the OpenVINS node. Inclusion of the IMU filter into the pipeline is determined by the parameter `enable_filter`. If set to `true`, the parameter `topic_imu` is set inside the `subscribe_composable.launch.py` launch file to the value
+
+    /<uav_name>/<topic_namespace>/imu_filtered
+
+where `<uav_name>` and `<topic_namespace>` are launch arguments. The default is
+
+    /<UAV_NAME environment variable>/vio_imu/imu_filtered
+
+Also a IMU filter node is launched together with the OpenVINS.
+
+If the `enable_filter` is set to `false`, the IMU topic with name defined in the `kalibr_imu_chain.yaml` config will be used.
 
 ## News / Events
 
