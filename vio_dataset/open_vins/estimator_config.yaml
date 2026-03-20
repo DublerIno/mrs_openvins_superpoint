@@ -86,7 +86,7 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # we have a KLT and descriptor based (KLT is better implemented...)
 
 #FOR superpoint we need false - so TracKDescriptor is used which is overwritten by Superpoint
-use_klt: false # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+use_klt: true # if true we will use KLT, otherwise use a ORB descriptor + robust matching
 
 num_pts: 200 # number of points (per camera) we will extract and try to track
 # num_pts: 200 # number of points (per camera) we will extract and try to track
@@ -109,9 +109,9 @@ do_nms: true
 use_cuda: true #true to use cuda graphical accelaration
 sp_threshold: 0.50 #nehraje roli - pouziva nejdriv iniTh a pak minTh
 #sp extractor
-sp_nfeatures:  500
+sp_nfeatures:  1000
 sp_scaleFactor: 1.2
-sp_nlevels: 4
+sp_nlevels: 1 
 sp_iniThFAST: 0.015
 sp_minThFAST: 0.007
 

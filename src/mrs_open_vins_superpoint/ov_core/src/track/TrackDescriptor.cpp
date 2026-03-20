@@ -395,31 +395,15 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   cv::Size size((int)((float)img0.cols / (float)min_px_dist), (int)((float)img0.rows / (float)min_px_dist));
   cv::Mat grid_2d = cv::Mat::zeros(size, CV_8UC1);
 
+  // !!!removed grid filtering with min px distance
   // For all good matches, lets append to our returned vectors
-  // NOTE: if we multi-thread this atomic can cause some randomness due to multiple thread detecting features
-  // NOTE: this is due to the fact that we select update features based on feat id
-  // NOTE: thus the order will matter since we try to select oldest (smallest id) to update with
-  // NOTE: not sure how to remove... maybe a better way?
-  for (size_t i = 0; i < pts0_ext.size(); i++) {
-    // Get current left keypoint, check that it is in bounds
-    cv::KeyPoint kpt = pts0_ext.at(i);
-    int x = (int)kpt.pt.x;
-    int y = (int)kpt.pt.y;
-    int x_grid = (int)(kpt.pt.x / (float)min_px_dist);
-    int y_grid = (int)(kpt.pt.y / (float)min_px_dist);
-    if (x_grid < 0 || x_grid >= size.width || y_grid < 0 || y_grid >= size.height || x < 0 || x >= img0.cols || y < 0 || y >= img0.rows) {
-      continue;
-    }
-    // Check if this keypoint is near another point
-    if (grid_2d.at<uint8_t>(y_grid, x_grid) > 127)
-      continue;
-    // Else we are good, append our keypoints and descriptors
-    pts0.push_back(pts0_ext.at(i));
-    desc0.push_back(desc0_ext.row((int)i));
-    // Set our IDs to be unique IDs here, will later replace with corrected ones, after temporal matching
-    size_t temp = ++currid;
-    ids0.push_back(temp);
-    grid_2d.at<uint8_t>(y_grid, x_grid) = 255;
+  for(size_t i=0; i<pts0_ext.size(); i++) {
+      // Append our keypoints and descriptors
+      pts0.push_back(pts0_ext.at(i));
+      desc0.push_back(desc0_ext.row((int)i));
+      // Set our IDs to be unique IDs here, will later replace with corrected ones, after temporal matching
+      size_t temp = ++currid;
+      ids0.push_back(temp);
   }
 }
 
