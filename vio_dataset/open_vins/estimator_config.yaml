@@ -86,9 +86,9 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # we have a KLT and descriptor based (KLT is better implemented...)
 
 #FOR superpoint we need false - so TracKDescriptor is used which is overwritten by Superpoint
-use_klt: true # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+use_klt: false # if true we will use KLT, otherwise use a ORB descriptor + robust matching
 
-num_pts: 200 # number of points (per camera) we will extract and try to track
+num_pts: 1000 # number of points (per camera) we will extract and try to track
 # num_pts: 200 # number of points (per camera) we will extract and try to track
 # fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)
 fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)
@@ -96,8 +96,9 @@ grid_x: 20 # extraction sub-grid count for horizontal direction (uniform trackin
 # grid_y: 5 # extraction sub-grid count for vertical direction (uniform tracking)
 grid_y: 20 # extraction sub-grid count for vertical direction (uniform tracking)
 # min_px_dist: 10 # distance between features (features near each other provide less information)
-min_px_dist: 20 # distance between features (features near each other provide less information)
-knn_ratio: 0.70 # descriptor knn threshold for the top two descriptor matches
+
+min_px_dist: 1 # distance between features (features near each other provide less information)
+knn_ratio: 0.90 # descriptor knn threshold for the top two descriptor matches
 track_frequency: 50.0 # frequency we will perform feature tracking at (in frames per second / hertz)
 downsample_cameras: true # will downsample image in half if true
 num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
@@ -106,10 +107,11 @@ histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
 #superpoint params
 weights_path:"/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin" #absolute path to cnn weights
 do_nms: true 
+
 use_cuda: true #true to use cuda graphical accelaration
 sp_threshold: 0.50 #nehraje roli - pouziva nejdriv iniTh a pak minTh
 #sp extractor
-sp_nfeatures:  1000
+sp_nfeatures:  1500
 sp_scaleFactor: 1.2
 sp_nlevels: 1 
 sp_iniThFAST: 0.015

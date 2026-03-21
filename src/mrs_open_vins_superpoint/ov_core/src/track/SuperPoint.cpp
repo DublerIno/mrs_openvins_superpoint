@@ -96,7 +96,7 @@ std::vector<torch::Tensor> SuperPoint::forward(torch::Tensor x) {
     auto cDa = torch::relu(convDa->forward(x));
     auto desc = convDb->forward(cDa);  // [B, d1, H/8, W/8]
 
-    auto dn = torch::norm(desc, 2, 1);
+    auto dn = torch::norm(desc, 2, 1).clamp_min(1e-8);
     desc = desc.div(torch::unsqueeze(dn, 1));
 
     //softmax over 65 classes
@@ -293,9 +293,10 @@ void SPDetector::computeDescriptors(const std::vector<cv::KeyPoint> &keypoints, 
     auto desc = torch::grid_sampler(mDesc, grid, 0, 0,false);  // [1, 256, 1, n_keypoints]
     desc = desc.squeeze(0).squeeze(1);  // [256, n_keypoints]
 
-    // normalize to 1
-    auto dn = torch::norm(desc, 2, 1);
-    desc = desc.div(torch::unsqueeze(dn, 1));
+    // Normalize each sampled descriptor column independently.
+    // After grid_sampler() the tensor is [256, n_keypoints], so dim 0 is the descriptor dimension.
+    auto dn = torch::norm(desc, 2, 0).clamp_min(1e-8);
+    desc = desc.div(torch::unsqueeze(dn, 0));
 
     desc = desc.transpose(0, 1).contiguous();  // [n_keypoints, 256]
     desc = desc.to(torch::kCPU);

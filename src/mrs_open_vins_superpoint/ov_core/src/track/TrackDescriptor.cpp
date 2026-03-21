@@ -22,6 +22,7 @@
 #include "TrackDescriptor.h"
 
 //NEW
+#include <limits>
 #include <opencv2/features2d.hpp>
 
 #include "Grider_FAST.h"
@@ -47,8 +48,6 @@ void TrackDescriptor::feed_new_camera(const CameraData &message) {
   // If we are doing binocular tracking, then we should parallize our tracking
   size_t num_images = message.images.size();
   if (num_images == 1) {
-    //make sure i use correct model
-    std::cout << "Mono image received" << std::endl;
     feed_monocular(message, 0);
   } else if (num_images == 2 && use_stereo) {
     feed_stereo(message, 0, 1);
@@ -383,27 +382,44 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   std::vector<cv::KeyPoint> pts0_ext;
   this->sp0(img0,cv::Mat(),pts0_ext,desc0_ext); //syntax for calling operator() of SPextractor class
   
-  //jak to vypada?
-  std::cout << "desc0_ext size: "
-          << desc0_ext.rows << " x "
-          << desc0_ext.cols << std::endl;
-  std::cout << "pts0_ext size: " << pts0_ext.size() << std::endl;
-
   // Create a 2D occupancy grid for this current image
   // Note that we scale this down, so that each grid point is equal to a set of pixels
   // This means that we will reject points that less then grid_px_size points away then existing features
   cv::Size size((int)((float)img0.cols / (float)min_px_dist), (int)((float)img0.rows / (float)min_px_dist));
   cv::Mat grid_2d = cv::Mat::zeros(size, CV_8UC1);
 
-  // !!!removed grid filtering with min px distance
   // For all good matches, lets append to our returned vectors
-  for(size_t i=0; i<pts0_ext.size(); i++) {
-      // Append our keypoints and descriptors
-      pts0.push_back(pts0_ext.at(i));
-      desc0.push_back(desc0_ext.row((int)i));
-      // Set our IDs to be unique IDs here, will later replace with corrected ones, after temporal matching
-      size_t temp = ++currid;
-      ids0.push_back(temp);
+  // NOTE: if we multi-thread this atomic can cause some randomness due to multiple thread detecting features
+  // NOTE: this is due to the fact that we select update features based on feat id
+  // NOTE: thus the order will matter since we try to select oldest (smallest id) to update with
+  // NOTE: not sure how to remove... maybe a better way?
+  size_t usable_count = std::min(pts0_ext.size(), (size_t)desc0_ext.rows);
+  for (size_t i = 0; i < usable_count; i++) {
+    // Get current left keypoint, check that it is in bounds
+    cv::KeyPoint kpt = pts0_ext.at(i);
+    int x = (int)kpt.pt.x;
+    int y = (int)kpt.pt.y;
+    int x_grid = (int)(kpt.pt.x / (float)min_px_dist);
+    int y_grid = (int)(kpt.pt.y / (float)min_px_dist);
+    if (x_grid < 0 || x_grid >= size.width || y_grid < 0 || y_grid >= size.height || x < 0 || x >= img0.cols || y < 0 || y >= img0.rows) {
+      continue;
+    }
+
+    // Match the existing tracker mask semantics: masked-out pixels are white.
+    if (!mask0.empty() && mask0.at<uint8_t>(y, x) > 127)
+      continue;
+
+    // Check if this keypoint is near another point
+    if (grid_2d.at<uint8_t>(y_grid, x_grid) > 127)
+      continue;
+
+    // Else we are good, append our keypoints and descriptors
+    pts0.push_back(pts0_ext.at(i));
+    desc0.push_back(desc0_ext.row((int)i));
+    // Set our IDs to be unique IDs here, will later replace with corrected ones, after temporal matching
+    size_t temp = ++currid;
+    ids0.push_back(temp);
+    grid_2d.at<uint8_t>(y_grid, x_grid) = 255;
   }
 }
 
@@ -489,6 +505,12 @@ void TrackDescriptor::perform_detection_stereo(const cv::Mat &img0, const cv::Ma
 void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const std::vector<cv::KeyPoint> &pts1, const cv::Mat &desc0,
                                    const cv::Mat &desc1, size_t id0, size_t id1, std::vector<cv::DMatch> &matches) {
 
+  if (pts0.empty() || pts1.empty() || desc0.empty() || desc1.empty())
+    return;
+
+  if (desc0.rows != (int)pts0.size() || desc1.rows != (int)pts1.size())
+    return;
+
   // Our 1to2 and 2to1 match vectors
   std::vector<std::vector<cv::DMatch>> matches0to1, matches1to0;
 
@@ -534,6 +556,9 @@ void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const 
   double max_focallength = std::max(max_focallength_img0, max_focallength_img1);
   cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 1 / max_focallength, 0.999, mask_rsc);
 
+  if (mask_rsc.size() != matches_good.size())
+    return;
+
   // Loop through all good matches, and only append ones that have passed RANSAC
   for (size_t i = 0; i < matches_good.size(); i++) {
     // Skip if bad ransac id
@@ -549,6 +574,10 @@ void TrackDescriptor::robust_ratio_test(std::vector<std::vector<cv::DMatch>> &ma
   for (auto &match : matches) {
     // If 2 NN has been identified, else remove this feature
     if (match.size() > 1) {
+      if (match[1].distance <= std::numeric_limits<float>::epsilon()) {
+        match.clear();
+        continue;
+      }
       // check distance ratio, remove it if the ratio is larger
       if (match[0].distance / match[1].distance > knn_ratio) {
         match.clear();
