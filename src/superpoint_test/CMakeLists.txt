@@ -6,7 +6,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# C++ standard (pick 17 unless you need 20)
+# ---------- C++ standard ----------
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -26,13 +26,14 @@ find_package(Torch REQUIRED)
 # ---------- target ----------
 add_executable(${PROJECT_NAME}
   src/superpoint_detector_node.cpp
-  src/SuperPoint.cpp
+  src/SuperPointExtractor.cc
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE ${TORCH_CXX_FLAGS})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
   ${OpenCV_INCLUDE_DIRS}
+  ${TORCH_INCLUDE_DIRS}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -49,9 +50,6 @@ ament_target_dependencies(${PROJECT_NAME}
   mrs_lib
 )
 
-#enforece optimization
-#add_compile_options("-O3")
-
 # Helps runtime find torch libs without exporting LD_LIBRARY_PATH every time
 set_target_properties(${PROJECT_NAME} PROPERTIES
   BUILD_RPATH "${TORCH_INSTALL_PREFIX}/lib"
@@ -63,9 +61,16 @@ install(TARGETS ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# Install config files if you have them
+# install model if you keep it in package root
+install(FILES
+  superpoint_jit_scripted.pth
+  DESTINATION share/${PROJECT_NAME}
+)
+
+# install config files if present
 install(DIRECTORY config
   DESTINATION share/${PROJECT_NAME}
+  OPTIONAL
 )
 
 ament_package()

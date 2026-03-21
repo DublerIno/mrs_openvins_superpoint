@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <algorithm>
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -13,15 +14,12 @@
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/core.hpp>
+#include <opencv2/features2d.hpp>
 
-// libtorch
-#include <torch/torch.h>
-
-// your SuperPoint wrapper
-#include "SuperPoint.h"
-
-// MRS helpers (optional but matches your current style)
 #include <mrs_lib/param_loader.h>
+
+// SuperPointSLAM3 extractor
+#include "SuperPointExtractor.h"
 
 namespace superpoint_test
 {
@@ -40,16 +38,18 @@ private:
   std::string weights_path_;
   std::string image_topic_;
   double threshold_ = 0.015;
-  bool do_nms_ = true;
-  bool use_cuda_ = false;
-  std::vector<int64_t> img_size_{160, 120};
+  bool do_nms_ = true;     // kept for compatibility, currently unused by this extractor
+  bool use_cuda_ = false;  // kept for compatibility, currently unused by this extractor
+  std::vector<int64_t> img_size_{160, 120};  // width, height
 
-  // torch
-  torch::Device device_{torch::kCPU};
-  std::shared_ptr<ORB_SLAM2::SuperPoint> model_;
-  std::unique_ptr<ORB_SLAM2::SPDetector> detector_;
+  int max_features_ = 500;
+  double scale_factor_ = 1.2;
+  int nlevels_ = 1;
 
-  // image_transport
+  // extractor
+  std::unique_ptr<ORB_SLAM3::SuperPointExtractor> extractor_;
+
+  // image transport
   image_transport::Subscriber sub_image_;
   image_transport::Publisher pub_debug_;
 
@@ -64,18 +64,19 @@ SuperPointDetectorNode::SuperPointDetectorNode(const rclcpp::NodeOptions & optio
 
 void SuperPointDetectorNode::initialize()
 {
-  // ---- parameters ----
-  // declare parameters so they show in `ros2 param list`
   this->declare_parameter<std::string>("config", "");
   this->declare_parameter<std::string>("weights_path", "");
   this->declare_parameter<std::string>("image_topic", "image");
   this->declare_parameter<double>("threshold", 0.015);
   this->declare_parameter<bool>("do_nms", true);
   this->declare_parameter<bool>("use_cuda", false);
-  this->declare_parameter<std::vector<int64_t>>("image_size",std::vector<int64_t>{160, 120}); // width, height
+  this->declare_parameter<std::vector<int64_t>>("image_size", std::vector<int64_t>{160, 120});
 
-  // MRS_lib ParamLoader 
-  auto node_ptr = std::shared_ptr<rclcpp::Node>(this, [](rclcpp::Node*){}); // non-owning alias
+  this->declare_parameter<int>("max_features", 500);
+  this->declare_parameter<double>("scale_factor", 1.2);
+  this->declare_parameter<int>("nlevels", 1);
+
+  auto node_ptr = std::shared_ptr<rclcpp::Node>(this, [](rclcpp::Node*){});
   mrs_lib::ParamLoader pl(node_ptr);
 
   pl.addYamlFileFromParam("config");
@@ -85,52 +86,41 @@ void SuperPointDetectorNode::initialize()
   pl.loadParam("do_nms", do_nms_);
   pl.loadParam("use_cuda", use_cuda_);
   pl.loadParam("image_size", img_size_);
-
+  pl.loadParam("max_features", max_features_);
+  pl.loadParam("scale_factor", scale_factor_);
+  pl.loadParam("nlevels", nlevels_);
 
   if (!pl.loadedSuccessfully()) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to load parameters (check `config` YAML + overrides).");
+    RCLCPP_ERROR(this->get_logger(), "Failed to load parameters (check config YAML + overrides).");
     rclcpp::shutdown();
     return;
   }
 
-  // ---- device ----
-  const bool cuda_available = torch::cuda::is_available();
-  device_ = torch::kCPU;
-  if (use_cuda_ && cuda_available) {
-    device_ = torch::kCUDA;
-  }
-
-  RCLCPP_INFO(this->get_logger(), "========== SuperPoint configuration ==========");
-  RCLCPP_INFO(this->get_logger(), "weights_path: %s", weights_path_.c_str());
-  RCLCPP_INFO(this->get_logger(), "image_topic:  %s", image_topic_.c_str());
-  RCLCPP_INFO(this->get_logger(), "threshold:    %.6f", threshold_);
-  RCLCPP_INFO(this->get_logger(), "do_nms:       %s", do_nms_ ? "true" : "false");
-  RCLCPP_INFO(this->get_logger(), "use_cuda:     %s", use_cuda_ ? "true" : "false");
-  RCLCPP_INFO(this->get_logger(), "CUDA avail:   %s", cuda_available ? "true" : "false");
-  RCLCPP_INFO(this->get_logger(), "device:       %s", device_.is_cuda() ? "CUDA" : "CPU");
-  RCLCPP_INFO(this->get_logger(), "==============================================");
-
-  // ---- model ----
-  model_ = std::make_shared<ORB_SLAM2::SuperPoint>();
+  RCLCPP_INFO(this->get_logger(), "========== SuperPointSLAM3 configuration ==========");
+  RCLCPP_INFO(this->get_logger(), "weights_path:  %s", weights_path_.c_str());
+  RCLCPP_INFO(this->get_logger(), "image_topic:   %s", image_topic_.c_str());
+  RCLCPP_INFO(this->get_logger(), "threshold:     %.6f", threshold_);
+  RCLCPP_INFO(this->get_logger(), "image_size:    [%ld, %ld]", img_size_[0], img_size_[1]);
+  RCLCPP_INFO(this->get_logger(), "max_features:  %d", max_features_);
+  RCLCPP_INFO(this->get_logger(), "scale_factor:  %.3f", scale_factor_);
+  RCLCPP_INFO(this->get_logger(), "nlevels:       %d", nlevels_);
+  RCLCPP_INFO(this->get_logger(), "do_nms:        %s (kept, currently unused)", do_nms_ ? "true" : "false");
+  RCLCPP_INFO(this->get_logger(), "use_cuda:      %s (kept, currently unused)", use_cuda_ ? "true" : "false");
+  RCLCPP_INFO(this->get_logger(), "===================================================");
 
   try {
-    model_->load_weights(weights_path_);
-  } catch (const c10::Error & e) {
-    RCLCPP_ERROR(this->get_logger(),
-                 "torch::load failed for '%s'. Error: %s",
-                 weights_path_.c_str(), e.what());
+    extractor_ = std::make_unique<ORB_SLAM3::SuperPointExtractor>(
+      weights_path_,
+      max_features_,
+      static_cast<float>(scale_factor_),
+      nlevels_,
+      static_cast<float>(threshold_));
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to construct SuperPointExtractor: %s", e.what());
     rclcpp::shutdown();
     return;
   }
 
-  model_->to(device_);
-  model_->eval();
-
-  // ---- detector ----
-  detector_ = std::make_unique<ORB_SLAM2::SPDetector>(model_);
-  detector_->setDevice(device_);
-
-  // ---- image transport ----
   image_transport::ImageTransport it(node_ptr);
 
   sub_image_ = it.subscribe(
@@ -148,62 +138,64 @@ void SuperPointDetectorNode::onImage(const sensor_msgs::msg::Image::ConstSharedP
   if (!is_initialized_.load()) {
     return;
   }
-  const auto start1 = std::chrono::high_resolution_clock::now();
 
+  const auto start1 = std::chrono::high_resolution_clock::now();
   const std::string color_encoding = "bgr8";
 
-  //recieved image
-  auto cv_ptr = cv_bridge::toCvShare(msg, color_encoding);
-  //const cv::Mat& img_bgr = cv_ptr->image;
+  cv_bridge::CvImageConstPtr cv_ptr;
+  try {
+    cv_ptr = cv_bridge::toCvShare(msg, color_encoding);
+  } catch (const cv_bridge::Exception & e) {
+    RCLCPP_ERROR(this->get_logger(), "cv_bridge error: %s", e.what());
+    return;
+  }
 
-  //incoming image size
-  //RCLCPP_INFO(this->get_logger(),"CV image size: %d x %d", cv_ptr->image.cols, cv_ptr->image.rows);
-  
   cv::Mat gray;
   if (cv_ptr->image.channels() == 1) {
-    gray = cv_ptr->image;
+    gray = cv_ptr->image.clone();
   } else {
     cv::cvtColor(cv_ptr->image, gray, cv::COLOR_BGR2GRAY);
   }
 
-  // Resize image if needed 
-  if (img_size_.size() == 2 && (gray.rows != img_size_[1] || gray.cols != img_size_[0])) { 
-    cv::resize(gray, gray, cv::Size(img_size_[0], img_size_[1])); 
-  } 
+  // resize
+  // if (img_size_.size() == 2 &&
+  //     (gray.cols != static_cast<int>(img_size_[0]) || gray.rows != static_cast<int>(img_size_[1]))) {
+  //   cv::resize(gray, gray, cv::Size(static_cast<int>(img_size_[0]), static_cast<int>(img_size_[1])));
+  // }
 
-  // SPDetector expects CV_8U grayscale.
   if (gray.type() != CV_8UC1) {
-    gray.convertTo(gray, CV_8U);
+    gray.convertTo(gray, CV_8UC1);
   }
 
   try {
     const auto start2 = std::chrono::high_resolution_clock::now();
 
-    //run forward pass
-    detector_->detect(gray);
+    std::vector<cv::KeyPoint> kpts;
+    cv::Mat desc;
+    std::vector<int> vLappingArea;
+
+    // mask is unused here
+    int n_kpts = (*extractor_)(gray, cv::Mat(), kpts, desc, vLappingArea);
 
     const auto end1 = std::chrono::high_resolution_clock::now();
 
-    //get keypoint from propabilities
-    std::vector<cv::KeyPoint> kpts;
-    detector_->getKeyPoints(static_cast<float>(threshold_), 0, gray.cols, 0, gray.rows, kpts, do_nms_);
-
-    cv::Mat desc;
-    detector_->computeDescriptors(kpts, desc);
-      
-    /*
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                         "kpts=%zu desc=%dx%d type=%d time=%.1fms img=%dx%d",
-                         kpts.size(), desc.rows, desc.cols, desc.type(), ms, gray.cols, gray.rows);
-    */
-
     // visualization
     cv::Mat vis;
-    int radius = 1;
     cv::cvtColor(gray, vis, cv::COLOR_GRAY2BGR);
+
+    int radius = 1;
     for (const auto & kp : kpts) {
       cv::circle(vis, kp.pt, radius, cv::Scalar(0, 255, 0), -1);
     }
+
+    cv::putText(
+      vis,
+      "kpts: " + std::to_string(std::max(0, n_kpts)),
+      cv::Point(10, 25),
+      cv::FONT_HERSHEY_SIMPLEX,
+      0.7,
+      cv::Scalar(0, 0, 255),
+      2);
 
     cv_bridge::CvImage out;
     out.header = msg->header;
@@ -214,22 +206,34 @@ void SuperPointDetectorNode::onImage(const sensor_msgs::msg::Image::ConstSharedP
 
     const auto end2 = std::chrono::high_resolution_clock::now();
 
-    const double pre_time = std::chrono::duration<double, std::milli>(start2 - start1).count(); // inital image proccess time
-    const double net_time = std::chrono::duration<double, std::milli>(end1 - start2).count(); //sp detect time
-    const double total_time = std::chrono::duration<double, std::milli>(end2 - start1).count(); //whole onImage callback
-    RCLCPP_INFO(get_logger(), "GetKeypoints.Size -  %zu keypoints.Pre timel %.1f; forward pass time: %.1f ms; total:  %.1f ms", kpts.size(), pre_time, net_time, total_time);
+    const double pre_time =
+      std::chrono::duration<double, std::milli>(start2 - start1).count();
+    const double net_time =
+      std::chrono::duration<double, std::milli>(end1 - start2).count();
+    const double total_time =
+      std::chrono::duration<double, std::milli>(end2 - start1).count();
 
+    RCLCPP_INFO(
+      get_logger(),
+      "kpts=%zu returned=%d desc=%dx%d type=%d pre=%.1f ms forward=%.1f ms total=%.1f ms",
+      kpts.size(),
+      n_kpts,
+      desc.rows,
+      desc.cols,
+      desc.type(),
+      pre_time,
+      net_time,
+      total_time);
 
-  } catch (const c10::Error & e) {
-    RCLCPP_ERROR(this->get_logger(), "SuperPoint torch error: %s", e.what());
   } catch (const std::exception & e) {
-    RCLCPP_ERROR(this->get_logger(), "Error: %s", e.what());
+    RCLCPP_ERROR(this->get_logger(), "SuperPointExtractor error: %s", e.what());
   }
 }
 
 }  // namespace superpoint_test
 
-int main(int argc, char ** argv) {
+int main(int argc, char ** argv)
+{
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<superpoint_test::SuperPointDetectorNode>(rclcpp::NodeOptions()));
   rclcpp::shutdown();

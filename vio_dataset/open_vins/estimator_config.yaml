@@ -86,7 +86,7 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # we have a KLT and descriptor based (KLT is better implemented...)
 
 #FOR superpoint we need false - so TracKDescriptor is used which is overwritten by Superpoint
-use_klt: true # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+use_klt: false # if true we will use KLT, otherwise use a ORB descriptor + robust matching
 
 num_pts: 200 # number of points (per camera) we will extract and try to track
 # num_pts: 200 # number of points (per camera) we will extract and try to track
