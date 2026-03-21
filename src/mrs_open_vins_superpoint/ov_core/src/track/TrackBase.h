@@ -106,6 +106,15 @@ public:
   virtual void display_active(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, std::string overlay = "");
 
   /**
+   * @brief Shows raw extracted features from the last image before tracking/matching rejection.
+   * @param img_out image to which we will overlay features on
+   * @param r1,g1,b1 first color to draw in
+   * @param r2,g2,b2 second color to draw in
+   * @param overlay Text overlay to replace to normal "cam0" in the top left of screen
+   */
+  virtual void display_raw(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, std::string overlay = "");
+
+  /**
    * @brief Shows a "trail" for each feature (i.e. its history)
    * @param img_out image to which we will overlayed features on
    * @param r1,g1,b1 first color to draw in
@@ -184,6 +193,9 @@ protected:
 
   /// Last set of tracked points
   std::unordered_map<size_t, std::vector<cv::KeyPoint>> pts_last;
+
+  /// Last set of raw extracted points before frontend filtering/matching
+  std::unordered_map<size_t, std::vector<cv::KeyPoint>> pts_last_raw;
 
   /// Set of IDs of each current feature in the database
   std::unordered_map<size_t, std::vector<size_t>> ids_last;

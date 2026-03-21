@@ -82,6 +82,8 @@ ROS2Visualizer::ROS2Visualizer(
   // Our tracking image
   it_pub_tracks = it.advertise("~/trackhist", 2);
   PRINT_DEBUG("Publishing: %s\n", it_pub_tracks.getTopic().c_str());
+  it_pub_tracks_raw = it.advertise("~/trackraw", 2);
+  PRINT_DEBUG("Publishing: %s\n", it_pub_tracks_raw.getTopic().c_str());
 
   // Groundtruth publishers
   pub_posegt = node->create_publisher<geometry_msgs::msg::PoseStamped>("~/posegt_out", 2);
@@ -686,22 +688,28 @@ void ROS2Visualizer::publish_images() {
   last_visualization_timestamp_image = _app->get_state()->_timestamp;
 
   // Check if we have subscribers
-  if (it_pub_tracks.getNumSubscribers() == 0)
+  if (it_pub_tracks.getNumSubscribers() == 0 && it_pub_tracks_raw.getNumSubscribers() == 0)
     return;
 
-  // Get our image of history tracks
-  cv::Mat img_history = _app->get_historical_viz_image();
-  if (img_history.empty())
-    return;
-
-  // Create our message
   std_msgs::msg::Header header;
   header.stamp = _node->now();
   header.frame_id = cam_frame_name_;
-  sensor_msgs::msg::Image::SharedPtr exl_msg = cv_bridge::CvImage(header, "bgr8", img_history).toImageMsg();
 
-  // Publish
-  it_pub_tracks.publish(exl_msg);
+  if (it_pub_tracks.getNumSubscribers() != 0) {
+    cv::Mat img_history = _app->get_historical_viz_image();
+    if (!img_history.empty()) {
+      sensor_msgs::msg::Image::SharedPtr hist_msg = cv_bridge::CvImage(header, "bgr8", img_history).toImageMsg();
+      it_pub_tracks.publish(hist_msg);
+    }
+  }
+
+  if (it_pub_tracks_raw.getNumSubscribers() != 0) {
+    cv::Mat img_raw = _app->get_raw_viz_image();
+    if (!img_raw.empty()) {
+      sensor_msgs::msg::Image::SharedPtr raw_msg = cv_bridge::CvImage(header, "bgr8", img_raw).toImageMsg();
+      it_pub_tracks_raw.publish(raw_msg);
+    }
+  }
 }
 
 void ROS2Visualizer::publish_features() {

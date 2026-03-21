@@ -414,6 +414,19 @@ cv::Mat VioManager::get_historical_viz_image() {
   return img_history;
 }
 
+cv::Mat VioManager::get_raw_viz_image() {
+
+  if (state == nullptr || trackFEATS == nullptr)
+    return cv::Mat();
+
+  std::string overlay = (did_zupt_update) ? "zvupt" : "";
+  overlay = (!is_initialized_vio) ? "init" : overlay;
+
+  cv::Mat img_raw;
+  trackFEATS->display_raw(img_raw, 0, 255, 255, 255, 255, 0, overlay);
+  return img_raw;
+}
+
 std::vector<Eigen::Vector3d> VioManager::get_features_SLAM() {
   std::vector<Eigen::Vector3d> slam_feats;
   for (auto &f : state->_features_SLAM) {

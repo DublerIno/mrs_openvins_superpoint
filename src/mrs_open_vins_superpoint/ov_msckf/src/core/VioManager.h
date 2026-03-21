@@ -113,6 +113,9 @@ public:
   /// Get a nice visualization image of what tracks we have
   cv::Mat get_historical_viz_image();
 
+  /// Get a visualization image of the raw extracted frontend detections
+  cv::Mat get_raw_viz_image();
+
   /// Returns 3d SLAM features in the global frame
   std::vector<Eigen::Vector3d> get_features_SLAM();
 

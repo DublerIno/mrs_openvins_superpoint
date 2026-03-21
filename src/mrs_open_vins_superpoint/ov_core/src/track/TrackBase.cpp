@@ -116,6 +116,71 @@ void TrackBase::display_active(cv::Mat &img_out, int r1, int g1, int b1, int r2,
   }
 }
 
+void TrackBase::display_raw(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, std::string overlay) {
+
+  // Cache the images to prevent other threads from editing while we viz (which can be slow)
+  std::map<size_t, cv::Mat> img_last_cache, img_mask_last_cache;
+  std::unordered_map<size_t, std::vector<cv::KeyPoint>> pts_last_raw_cache;
+  {
+    std::lock_guard<std::mutex> lckv(mtx_last_vars);
+    img_last_cache = img_last;
+    img_mask_last_cache = img_mask_last;
+    pts_last_raw_cache = pts_last_raw;
+  }
+
+  int max_width = -1;
+  int max_height = -1;
+  for (auto const &pair : img_last_cache) {
+    if (max_width < pair.second.cols)
+      max_width = pair.second.cols;
+    if (max_height < pair.second.rows)
+      max_height = pair.second.rows;
+  }
+
+  if (img_last_cache.empty() || max_width == -1 || max_height == -1)
+    return;
+
+  bool is_small = (std::min(max_width, max_height) < 400);
+  bool image_new = ((int)img_last_cache.size() * max_width != img_out.cols || max_height != img_out.rows);
+
+  if (image_new)
+    img_out = cv::Mat(max_height, (int)img_last_cache.size() * max_width, CV_8UC3, cv::Scalar(0, 0, 0));
+
+  int index_cam = 0;
+  for (auto const &pair : img_last_cache) {
+    cv::Mat img_temp;
+    if (image_new)
+      cv::cvtColor(img_last_cache[pair.first], img_temp, cv::COLOR_GRAY2RGB);
+    else
+      img_temp = img_out(cv::Rect(max_width * index_cam, 0, max_width, max_height));
+
+    auto raw_it = pts_last_raw_cache.find(pair.first);
+    if (raw_it != pts_last_raw_cache.end()) {
+      for (const auto &kpt : raw_it->second) {
+        cv::Point2f pt_l = kpt.pt;
+        cv::circle(img_temp, pt_l, (is_small) ? 1 : 2, cv::Scalar(r1, g1, b1), cv::FILLED);
+        cv::Point2f pt_l_top = cv::Point2f(pt_l.x - 2, pt_l.y - 2);
+        cv::Point2f pt_l_bot = cv::Point2f(pt_l.x + 2, pt_l.y + 2);
+        cv::rectangle(img_temp, pt_l_top, pt_l_bot, cv::Scalar(r2, g2, b2), 1);
+      }
+    }
+
+    auto txtpt = (is_small) ? cv::Point(10, 30) : cv::Point(30, 60);
+    if (overlay == "") {
+      cv::putText(img_temp, "RAW CAM:" + std::to_string((int)pair.first), txtpt, cv::FONT_HERSHEY_COMPLEX_SMALL,
+                  (is_small) ? 1.5 : 3.0, cv::Scalar(0, 255, 0), 3);
+    } else {
+      cv::putText(img_temp, overlay, txtpt, cv::FONT_HERSHEY_COMPLEX_SMALL, (is_small) ? 1.5 : 3.0, cv::Scalar(0, 0, 255), 3);
+    }
+
+    cv::Mat mask = cv::Mat::zeros(img_mask_last_cache[pair.first].rows, img_mask_last_cache[pair.first].cols, CV_8UC3);
+    mask.setTo(cv::Scalar(0, 0, 255), img_mask_last_cache[pair.first]);
+    cv::addWeighted(mask, 0.1, img_temp, 1.0, 0.0, img_temp);
+    img_temp.copyTo(img_out(cv::Rect(max_width * index_cam, 0, img_last_cache[pair.first].cols, img_last_cache[pair.first].rows)));
+    index_cam++;
+  }
+}
+
 void TrackBase::display_history(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, std::vector<size_t> highlighted,
                                 std::string overlay) {
 

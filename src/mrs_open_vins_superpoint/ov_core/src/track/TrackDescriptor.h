@@ -121,7 +121,7 @@ protected:
    * See robust_match() for the matching.
    */
   void perform_detection_monocular(const cv::Mat &img0, const cv::Mat &mask0, std::vector<cv::KeyPoint> &pts0, cv::Mat &desc0,
-                                   std::vector<size_t> &ids0);
+                                   std::vector<size_t> &ids0, std::vector<cv::KeyPoint> *pts0_raw = nullptr);
 
   /**
    * @brief Detects new features in the current stereo pair

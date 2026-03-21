@@ -89,13 +89,15 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   // If we are the first frame (or have lost tracking), initialize our descriptors
   if (pts_last.find(cam_id) == pts_last.end() || pts_last[cam_id].empty()) {
     std::vector<cv::KeyPoint> good_left;
+    std::vector<cv::KeyPoint> raw_left;
     std::vector<size_t> good_ids_left;
     cv::Mat good_desc_left;
-    perform_detection_monocular(img, mask, good_left, good_desc_left, good_ids_left);
+    perform_detection_monocular(img, mask, good_left, good_desc_left, good_ids_left, &raw_left);
     std::lock_guard<std::mutex> lckv(mtx_last_vars);
     img_last[cam_id] = img;
     img_mask_last[cam_id] = mask;
     pts_last[cam_id] = good_left;
+    pts_last_raw[cam_id] = raw_left;
     ids_last[cam_id] = good_ids_left;
     desc_last[cam_id] = good_desc_left;
     return;
@@ -103,11 +105,12 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
 
   // Our new keypoints and descriptor for the new image
   std::vector<cv::KeyPoint> pts_new;
+  std::vector<cv::KeyPoint> pts_new_raw;
   cv::Mat desc_new;
   std::vector<size_t> ids_new;
 
   // First, extract new descriptors for this new image
-  perform_detection_monocular(img, mask, pts_new, desc_new, ids_new);
+  perform_detection_monocular(img, mask, pts_new, desc_new, ids_new, &pts_new_raw);
 
   //before perform_detection_monocular(img, pts_new, desc_new, ids_new);
 
@@ -172,6 +175,7 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
     img_last[cam_id] = img;
     img_mask_last[cam_id] = mask;
     pts_last[cam_id] = good_left;
+    pts_last_raw[cam_id] = pts_new_raw;
     ids_last[cam_id] = good_ids_left;
     desc_last[cam_id] = good_desc_left;
   }
@@ -363,7 +367,7 @@ void TrackDescriptor::feed_stereo(const CameraData &message, size_t msg_id_left,
 
 //===================Superpoint implementation===================
 void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv::Mat &mask0, std::vector<cv::KeyPoint> &pts0,
-                                                  cv::Mat &desc0, std::vector<size_t> &ids0) {
+                                                  cv::Mat &desc0, std::vector<size_t> &ids0, std::vector<cv::KeyPoint> *pts0_raw) {
 
   // Assert that we need features
   assert(pts0.empty());
@@ -381,6 +385,9 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   cv::Mat desc0_ext;
   std::vector<cv::KeyPoint> pts0_ext;
   this->sp0(img0,cv::Mat(),pts0_ext,desc0_ext); //syntax for calling operator() of SPextractor class
+
+  if (pts0_raw != nullptr)
+    *pts0_raw = pts0_ext;
   
   // Create a 2D occupancy grid for this current image
   // Note that we scale this down, so that each grid point is equal to a set of pixels
