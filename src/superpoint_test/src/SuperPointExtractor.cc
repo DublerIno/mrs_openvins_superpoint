@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <iostream>
 #include <numeric>
+#include <torch/cuda.h>
 
 namespace ORB_SLAM3 {
 
@@ -9,14 +10,23 @@ SuperPointExtractor::SuperPointExtractor(const std::string& model_path,
                                        int nfeatures,
                                        float scaleFactor,
                                        int nlevels,
+                                       bool use_cuda,
                                        float confidence_threshold)
     : mConfidenceThreshold(confidence_threshold),
       mnFeatures(nfeatures),
       mfScaleFactor(scaleFactor),
       mnLevels(nlevels)
 {
+    if (use_cuda) {
+        if (!torch::cuda::is_available()) {
+            throw std::runtime_error("SuperPointExtractor requested CUDA, but torch::cuda::is_available() is false");
+        }
+        mDevice = torch::Device(torch::kCUDA, 0);
+    }
+
     try {
         mModel.load_weights(model_path);
+        mModel.to(mDevice);
         mModel.eval();
     }
     catch (const c10::Error& e) {
@@ -72,7 +82,7 @@ int SuperPointExtractor::operator()(cv::InputArray _image, cv::InputArray _mask,
     ComputePyramid(grayImage);
 
     // Process base level with SuperPoint
-    torch::Tensor inputTensor = PreprocessImage(mvImagePyramid[0]);
+    torch::Tensor inputTensor = PreprocessImage(mvImagePyramid[0]).to(mDevice);
 
     torch::NoGradGuard no_grad;
     auto output = mModel.forward(inputTensor);

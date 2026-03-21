@@ -105,7 +105,7 @@ void SuperPointDetectorNode::initialize()
   RCLCPP_INFO(this->get_logger(), "scale_factor:  %.3f", scale_factor_);
   RCLCPP_INFO(this->get_logger(), "nlevels:       %d", nlevels_);
   RCLCPP_INFO(this->get_logger(), "do_nms:        %s (kept, currently unused)", do_nms_ ? "true" : "false");
-  RCLCPP_INFO(this->get_logger(), "use_cuda:      %s (kept, currently unused)", use_cuda_ ? "true" : "false");
+  RCLCPP_INFO(this->get_logger(), "use_cuda:      %s", use_cuda_ ? "true" : "false");
   RCLCPP_INFO(this->get_logger(), "===================================================");
 
   try {
@@ -114,6 +114,7 @@ void SuperPointDetectorNode::initialize()
       max_features_,
       static_cast<float>(scale_factor_),
       nlevels_,
+      use_cuda_,
       static_cast<float>(threshold_));
   } catch (const std::exception & e) {
     RCLCPP_ERROR(this->get_logger(), "Failed to construct SuperPointExtractor: %s", e.what());

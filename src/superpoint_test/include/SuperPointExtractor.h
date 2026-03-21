@@ -15,6 +15,7 @@ public:
                        int nfeatures,
                        float scaleFactor,
                        int nlevels,
+                       bool use_cuda = false,
                        float confidence_threshold = 0.015f);
     
     ~SuperPointExtractor() {}
@@ -47,6 +48,7 @@ private:
 
     // Model and parameters
     SuperPoint mModel;
+    torch::Device mDevice{torch::kCPU};
     float mConfidenceThreshold;
     int mnFeatures;
     float mfScaleFactor;
