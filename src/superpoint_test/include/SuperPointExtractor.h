@@ -2,9 +2,10 @@
 #define SUPERPOINTEXTRACTOR_H
 
 #include <vector>
-#include <torch/script.h>
+#include <torch/torch.h>
 #include <opencv2/opencv.hpp>
 #include "FeatureExtractor.h"
+#include "SuperPointModel.h"
 
 namespace ORB_SLAM3 {
 
@@ -45,7 +46,7 @@ private:
     void ApplyANMS(std::vector<cv::KeyPoint>& keypoints, const int num_features);
 
     // Model and parameters
-    torch::jit::Module mModel;
+    SuperPoint mModel;
     float mConfidenceThreshold;
     int mnFeatures;
     float mfScaleFactor;

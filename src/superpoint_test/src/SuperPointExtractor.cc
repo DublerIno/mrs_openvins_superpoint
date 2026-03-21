@@ -1,5 +1,7 @@
 #include "SuperPointExtractor.h"
+#include <algorithm>
 #include <iostream>
+#include <numeric>
 
 namespace ORB_SLAM3 {
 
@@ -14,12 +16,15 @@ SuperPointExtractor::SuperPointExtractor(const std::string& model_path,
       mnLevels(nlevels)
 {
     try {
-        // Load the TorchScript model
-        mModel = torch::jit::load(model_path);
+        mModel.load_weights(model_path);
         mModel.eval();
     }
     catch (const c10::Error& e) {
         std::cerr << "Error loading SuperPoint model: " << e.what() << std::endl;
+        throw;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error loading SuperPoint weights: " << e.what() << std::endl;
         throw;
     }
 
@@ -54,6 +59,9 @@ int SuperPointExtractor::operator()(cv::InputArray _image, cv::InputArray _mask,
     if(image.empty())
         return -1;
 
+    (void)_mask;
+    vLappingArea.clear();
+
     // Create grayscale image if necessary
     cv::Mat grayImage;
     if(image.channels() > 1)
@@ -65,15 +73,13 @@ int SuperPointExtractor::operator()(cv::InputArray _image, cv::InputArray _mask,
 
     // Process base level with SuperPoint
     torch::Tensor inputTensor = PreprocessImage(mvImagePyramid[0]);
-    
-    std::vector<torch::jit::IValue> inputs;
-    inputs.push_back(inputTensor);
-    
-    auto output = mModel.forward(inputs).toTuple();
-    
-    // Extract semi-dense keypoint scores and dense descriptors
-    auto scores = output->elements()[0].toTensor();
-    auto dense_desc = output->elements()[1].toTensor();
+
+    torch::NoGradGuard no_grad;
+    auto output = mModel.forward(inputTensor);
+
+    // Extract probability heatmap and dense descriptors
+    auto scores = output[0].to(torch::kCPU).contiguous();
+    auto dense_desc = output[1].to(torch::kCPU).contiguous();
     
     // Extract initial keypoints based on confidence threshold
     keypoints = ExtractKeypoints(scores, mConfidenceThreshold);
@@ -91,26 +97,26 @@ int SuperPointExtractor::operator()(cv::InputArray _image, cv::InputArray _mask,
 torch::Tensor SuperPointExtractor::PreprocessImage(const cv::Mat& image) {
     cv::Mat float_img;
     image.convertTo(float_img, CV_32F, 1.0/255.0);
-    
-    // Create tensor from image
-    auto tensor_img = torch::from_blob(float_img.data, 
-                                     {1, 1, float_img.rows, float_img.cols},
-                                     torch::kFloat32);
-    return tensor_img;
+
+    return torch::from_blob(
+               float_img.data,
+               {1, 1, float_img.rows, float_img.cols},
+               torch::TensorOptions().dtype(torch::kFloat32))
+        .clone();
 }
 
 std::vector<cv::KeyPoint> SuperPointExtractor::ExtractKeypoints(const torch::Tensor& scores, float threshold) {
     std::vector<cv::KeyPoint> keypoints;
-    auto scores_acc = scores.accessor<float,4>();
+    auto scores_acc = scores.accessor<float,3>();
     
     // Get dimensions
-    int height = scores.size(2);
-    int width = scores.size(3);
+    int height = static_cast<int>(scores.size(1));
+    int width = static_cast<int>(scores.size(2));
     
     // Extract keypoints based on confidence threshold
     for(int h = 0; h < height; h++) {
         for(int w = 0; w < width; w++) {
-            float score = scores_acc[0][0][h][w];
+            float score = scores_acc[0][h][w];
             if(score > threshold) {
                 keypoints.push_back(
                     cv::KeyPoint(static_cast<float>(w), 
@@ -125,22 +131,20 @@ std::vector<cv::KeyPoint> SuperPointExtractor::ExtractKeypoints(const torch::Ten
 
 cv::Mat SuperPointExtractor::ExtractDescriptors(const torch::Tensor& descriptors,
                                               const std::vector<cv::KeyPoint>& keypoints) {
-    const int desc_dim = descriptors.size(1);
-    cv::Mat desc(keypoints.size(), desc_dim, CV_32F);
-    
-    auto desc_acc = descriptors.accessor<float,3>();
-    
+    const int desc_dim = static_cast<int>(descriptors.size(1));
+    cv::Mat desc(static_cast<int>(keypoints.size()), desc_dim, CV_32F, cv::Scalar(0));
+    auto desc_acc = descriptors.accessor<float,4>();
+    const int coarse_height = static_cast<int>(descriptors.size(2));
+    const int coarse_width = static_cast<int>(descriptors.size(3));
+
     for(size_t i = 0; i < keypoints.size(); i++) {
         const cv::KeyPoint& kp = keypoints[i];
-        int x = static_cast<int>(std::round(kp.pt.x));
-        int y = static_cast<int>(std::round(kp.pt.y));
+        const int x = std::clamp(static_cast<int>(std::round(kp.pt.x / 8.0f)), 0, coarse_width - 1);
+        const int y = std::clamp(static_cast<int>(std::round(kp.pt.y / 8.0f)), 0, coarse_height - 1);
         
         float* desc_row = desc.ptr<float>(i);
         for(int d = 0; d < desc_dim; d++) {
-            
-            //chatgpt suggested fix?
-            
-            desc_row[d] = desc_acc[0][d][y * descriptors.size(3) + x];
+            desc_row[d] = desc_acc[0][d][y][x];
         }
     }
     
@@ -148,7 +152,7 @@ cv::Mat SuperPointExtractor::ExtractDescriptors(const torch::Tensor& descriptors
 }
 
 void SuperPointExtractor::ApplyANMS(std::vector<cv::KeyPoint>& keypoints, const int num_features) {
-    if(keypoints.size() <= num_features)
+    if(keypoints.size() <= static_cast<size_t>(num_features))
         return;
 
     // Sort keypoints by response (confidence)
@@ -187,7 +191,8 @@ void SuperPointExtractor::ApplyANMS(std::vector<cv::KeyPoint>& keypoints, const 
     // Select top num_features keypoints
     std::vector<cv::KeyPoint> new_keypoints;
     new_keypoints.reserve(num_features);
-    for(size_t i = 0; i < std::min(num_features, (int)indices.size()); i++) {
+    const size_t keep_count = std::min(static_cast<size_t>(num_features), indices.size());
+    for(size_t i = 0; i < keep_count; i++) {
         new_keypoints.push_back(keypoints[indices[i]]);
     }
 

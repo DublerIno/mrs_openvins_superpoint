@@ -27,6 +27,7 @@ find_package(Torch REQUIRED)
 add_executable(${PROJECT_NAME}
   src/superpoint_detector_node.cpp
   src/SuperPointExtractor.cc
+  src/SuperPointModel.cpp
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE ${TORCH_CXX_FLAGS})
@@ -63,7 +64,7 @@ install(TARGETS ${PROJECT_NAME}
 
 # install model if you keep it in package root
 install(FILES
-  superpoint_jit_scripted.pth
+  superpoint_model_weights.bin
   DESTINATION share/${PROJECT_NAME}
 )
 

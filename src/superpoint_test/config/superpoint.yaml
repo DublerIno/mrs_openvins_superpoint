@@ -1,11 +1,11 @@
 /**:
   ros__parameters:
-    weights_path: "/home/sponer/ws_openvins_superpoint/src/superpoint_test/superpoint_jit_scripted.pth"
-    image_topic: "/camera/image"
+    weights_path: "/home/sponer/ws_openvins_superpoint/src/superpoint_test/superpoint_model_weights.bin"
+    image_topic: "/vio1/rpi_camera_front/image_raw"
     threshold: 0.015
     do_nms: true
     use_cuda: false
-    image_size: [640, 480]
+    image_size: [1280 , 800]
     max_features: 500
     scale_factor: 1.2
     nlevels: 1

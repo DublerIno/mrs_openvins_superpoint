@@ -47,29 +47,3 @@ struct SuperPoint : torch::nn::Module {
 
 };
 
-
-cv::Mat SPdetect(std::shared_ptr<SuperPoint> model, cv::Mat img, std::vector<cv::KeyPoint> &keypoints, double threshold, bool nms, bool cuda);
-// torch::Tensor NMS(torch::Tensor kpts);
-
-class SPDetector {
-public:
-    SPDetector(std::shared_ptr<SuperPoint> _model);
-
-    //wrapper fix
-    void setDevice(const torch::Device& device);
-
-    void detect(cv::Mat &image);
-    void getKeyPoints(float threshold, int iniX, int maxX, int iniY, int maxY, std::vector<cv::KeyPoint> &keypoints, bool nms);
-    void computeDescriptors(const std::vector<cv::KeyPoint> &keypoints, cv::Mat &descriptors);
-
-private:
-    std::shared_ptr<SuperPoint> model_;
-    torch::Device device_{torch::kCPU};
-
-    torch::Tensor mProb;
-    torch::Tensor mDesc;
-};
-
-}  // ORB_SLAM
-
-#endif
