@@ -1,0 +1,27 @@
+name: docker
+root: ./
+socket_name: mrs
+attach: false
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+startup_window: rosbag
+
+pre_window: export UAV_NAME=uav1; export USE_SIM_TIME="true"; export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+
+
+windows:
+  - rosbag:
+      layout: even-vertical
+      panes:
+        - ./play.sh
+        - ./republish.sh
+        - ./rviz.sh
+        - ros2 run rmw_zenoh_cpp rmw_zenohd
+        - 
+
+  - vio:
+      layout: tiled
+      panes:
+      - 
+        - source /home/sponer/ws_openvins_superpoint/install/setup.bash
+        - ros2 run superpoint_test_extractor superpoint_test_extractor --ros-args --params-file /home/sponer/ws_openvins_superpoint/tmux/superpoint_node_extractor/config/superpoint.yaml
+

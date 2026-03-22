@@ -1,0 +1,31 @@
+launch:
+  - node:
+      pkg: "image_transport"
+      exec: "republish"
+      name: "republisher_camera"
+      args: "compressed raw"
+
+      param:
+        - name: "in_transport"
+          value: "compressed"
+
+      remap:
+        - from: "in/compressed"
+          to: "/vio1/rpi_camera_front/image_raw/compressed"
+        - from: "out"
+          to: "/vio1/rpi_camera_front/image_raw"
+  - node:
+      pkg: "image_transport"
+      exec: "republish"
+      name: "republisher_vio"
+      args: "compressed raw"
+
+      param:
+        - name: "in_transport"
+          value: "compressed"
+
+      remap:
+        - from: "in/compressed"
+          to: "/vio1_front/open_vins/trackhist/compressed"
+        - from: "out"
+          to: "/vio1_front/open_vins/trackhist"
