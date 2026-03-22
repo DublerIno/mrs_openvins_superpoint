@@ -1,15 +1,18 @@
 /**:
   ros__parameters:
-    weights_path: "/home/sponer/ws_superpoint/src/superpoint_test/superpoint_model_weights.bin"
+    weights_path: "/home/sponer/ws_openvins_superpoint/src/superpoint_test_extractor/superpoint_model_weights.bin"
     image_topic: "/vio1/rpi_camera_front/image_raw"
-    threshold: 0.015
-    do_nms: true
-    use_cuda: true
-    image_size: [1280, 800]   # width, height
     nfeatures: 1000
     scale_factor: 1.2
     nlevels: 1
+    threshold: 0.015
     min_threshold: 0.007
+    do_nms: true
+    use_cuda: true
+    match_threshold: 0.7
+    max_track_length: 10
+    min_track_length: 4
+    image_size: [1280, 800]   # width, height
 
       
 #  threshold: 0.015
