@@ -42,7 +42,7 @@ mrs_uav_flightforge_simulator:
 
   graphics_settings: "medium"
 
-  realtime_factor: 1.0 # [-]
+  realtime_factor: 0.1 # [-]
 
   # world_name: "valley" # works in Lite
   # world_name: "warehouse" # works in Lite

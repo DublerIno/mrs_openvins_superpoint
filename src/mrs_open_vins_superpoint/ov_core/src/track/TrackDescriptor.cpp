@@ -97,15 +97,16 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
     img_last[cam_id] = img;
     img_mask_last[cam_id] = mask;
     pts_last[cam_id] = good_left;
-    pts_last_raw[cam_id] = raw_left;
+    pts_last_raw[cam_id] = raw_left; //for raw visualtization
     ids_last[cam_id] = good_ids_left;
     desc_last[cam_id] = good_desc_left;
+    PRINT_DEBUG("Initialized first frame for cam_id %zu with %zu features\n", cam_id, good_left.size());
     return;
   }
 
   // Our new keypoints and descriptor for the new image
   std::vector<cv::KeyPoint> pts_new;
-  std::vector<cv::KeyPoint> pts_new_raw;
+  std::vector<cv::KeyPoint> pts_new_raw; //for raw visualtization
   cv::Mat desc_new;
   std::vector<size_t> ids_new;
 
@@ -117,7 +118,7 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   rT2 = boost::posix_time::microsec_clock::local_time();
 
 
-  //Match
+  // Match
   // Our matches temporally left to left
   std::vector<cv::DMatch> matches_ll;
 
@@ -136,7 +137,7 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   // Loop through all current left to right points
   // We want to see if any of theses have matches to the previous frame
   // If we have a match new->old then we want to use that ID instead of the new one
-  for (size_t i = 0; i < pts_new.size(); i++) {
+  for (size_t i = 0; i < pts_new.size(); i++) { //for all new features
 
     // Loop through all left matches, and find the old "train" id
     int idll = -1;
@@ -144,8 +145,9 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
       if (matches_ll[j].trainIdx == (int)i) {
         idll = matches_ll[j].queryIdx;
       }
-    }
-
+    } 
+    
+    //if we found a good track from left to left
     // Then lets replace the current ID with the old ID if found
     // Else just append the current feature and its unique ID
     good_left.push_back(pts_new[i]);
@@ -160,18 +162,19 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   rT4 = boost::posix_time::microsec_clock::local_time();
 
   // Update our feature database, with theses new observations
-  for (size_t i = 0; i < good_left.size(); i++) {
+  // main output of the class
+  for (size_t i = 0; i < good_left.size(); i++) { //for all good features
     cv::Point2f npt_l = camera_calib.at(cam_id)->undistort_cv(good_left.at(i).pt);
     database->update_feature(good_ids_left.at(i), message.timestamp, cam_id, good_left.at(i).pt.x, good_left.at(i).pt.y, npt_l.x, npt_l.y);
   }
 
   // Debug info
-  // PRINT_DEBUG("LtoL = %d | good = %d | fromlast = %d\n",(int)matches_ll.size(),(int)good_left.size(),num_tracklast);
+   PRINT_DEBUG("LtoL = %d | good = %d | fromlast = %d\n",(int)matches_ll.size(),(int)good_left.size(),num_tracklast);
 
   // Move forward in time
   // Save current as last - lock only for this small amount of time
   {
-    std::lock_guard<std::mutex> lckv(mtx_last_vars);
+    std::lock_guard<std::mutex> lckv(mtx_last_vars); //calls mtx_last_vars.lock(); and mtx_last_vars.unlock() when we leave this scope
     img_last[cam_id] = img;
     img_mask_last[cam_id] = mask;
     pts_last[cam_id] = good_left;
@@ -372,16 +375,8 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   // Assert that we need features
   assert(pts0.empty());
   //SUPERPOINT = GET both keypoints and descriptors
-
-  // Extract our features (use FAST with griding)
-  //std::vector<cv::KeyPoint> pts0_ext;
-  //cv::Mat desc0_ext;
-  //Grider_FAST::perform_griding(img0, mask0, pts0_ext, num_features, grid_x, grid_y, threshold, true, desc0_ext);
-
+  
   // For all new points, extract their descriptors
-
-
-  //this->orb0->compute(img0, pts0_ext, desc0_ext);
   cv::Mat desc0_ext;
   std::vector<cv::KeyPoint> pts0_ext;
   this->sp0(img0,cv::Mat(),pts0_ext,desc0_ext); //syntax for calling operator() of SPextractor class
@@ -389,44 +384,31 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   if (pts0_raw != nullptr)
     *pts0_raw = pts0_ext;
   
-  // Create a 2D occupancy grid for this current image
-  // Note that we scale this down, so that each grid point is equal to a set of pixels
-  // This means that we will reject points that less then grid_px_size points away then existing features
-  cv::Size size((int)((float)img0.cols / (float)min_px_dist), (int)((float)img0.rows / (float)min_px_dist));
-  cv::Mat grid_2d = cv::Mat::zeros(size, CV_8UC1);
-
   // For all good matches, lets append to our returned vectors
   // NOTE: if we multi-thread this atomic can cause some randomness due to multiple thread detecting features
   // NOTE: this is due to the fact that we select update features based on feat id
   // NOTE: thus the order will matter since we try to select oldest (smallest id) to update with
   // NOTE: not sure how to remove... maybe a better way?
-  size_t usable_count = std::min(pts0_ext.size(), (size_t)desc0_ext.rows);
+  size_t usable_count = std::min(pts0_ext.size(), static_cast<size_t>(desc0_ext.rows));
   for (size_t i = 0; i < usable_count; i++) {
-    // Get current left keypoint, check that it is in bounds
+    //Check that the point is in bounds
     cv::KeyPoint kpt = pts0_ext.at(i);
     int x = (int)kpt.pt.x;
     int y = (int)kpt.pt.y;
-    int x_grid = (int)(kpt.pt.x / (float)min_px_dist);
-    int y_grid = (int)(kpt.pt.y / (float)min_px_dist);
-    if (x_grid < 0 || x_grid >= size.width || y_grid < 0 || y_grid >= size.height || x < 0 || x >= img0.cols || y < 0 || y >= img0.rows) {
+    if (x < 0 || x >= img0.cols || y < 0 || y >= img0.rows) {
       continue;
     }
 
-    // Match the existing tracker mask semantics: masked-out pixels are white.
+    //Mask logic used here instead of in SPextractor - maybe should move??
     if (!mask0.empty() && mask0.at<uint8_t>(y, x) > 127)
       continue;
 
-    // Check if this keypoint is near another point
-    if (grid_2d.at<uint8_t>(y_grid, x_grid) > 127)
-      continue;
-
-    // Else we are good, append our keypoints and descriptors
+    //Append keypoints and descriptors
     pts0.push_back(pts0_ext.at(i));
     desc0.push_back(desc0_ext.row((int)i));
     // Set our IDs to be unique IDs here, will later replace with corrected ones, after temporal matching
     size_t temp = ++currid;
     ids0.push_back(temp);
-    grid_2d.at<uint8_t>(y_grid, x_grid) = 255;
   }
 }
 
@@ -512,11 +494,15 @@ void TrackDescriptor::perform_detection_stereo(const cv::Mat &img0, const cv::Ma
 void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const std::vector<cv::KeyPoint> &pts1, const cv::Mat &desc0,
                                    const cv::Mat &desc1, size_t id0, size_t id1, std::vector<cv::DMatch> &matches) {
 
-  if (pts0.empty() || pts1.empty() || desc0.empty() || desc1.empty())
+  if (pts0.empty() || pts1.empty() || desc0.empty() || desc1.empty()) {
+    PRINT_ALL("robust match error\n");
     return;
+  }
 
-  if (desc0.rows != (int)pts0.size() || desc1.rows != (int)pts1.size())
+  if (desc0.rows != (int)pts0.size() || desc1.rows != (int)pts1.size()) {
+    PRINT_ALL("robust match error\n");
     return;
+  }
 
   // Our 1to2 and 2to1 match vectors
   std::vector<std::vector<cv::DMatch>> matches0to1, matches1to0;
@@ -524,16 +510,20 @@ void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const 
   // Match descriptors (return 2 nearest neighbours)
   matcher->knnMatch(desc0, desc1, matches0to1, 2);
   matcher->knnMatch(desc1, desc0, matches1to0, 2);
-
+  PRINT_ALL("matches before ratio test = %zu\n", matches0to1.size());
+  
   // Do a ratio test for both matches
   robust_ratio_test(matches0to1);
   robust_ratio_test(matches1to0);
 
+  PRINT_ALL("matches after ratio test = %zu\n", matches0to1.size());
   // Finally do a symmetry test
   std::vector<cv::DMatch> matches_good;
   robust_symmetry_test(matches0to1, matches1to0, matches_good);
+  PRINT_ALL("matches good after ratio and symmetry test = %zu\n", matches_good.size());
 
   // Convert points into points for RANSAC
+  // Creates point pairs 
   std::vector<cv::Point2f> pts0_rsc, pts1_rsc;
   for (size_t i = 0; i < matches_good.size(); i++) {
     // Get our ids
@@ -545,8 +535,10 @@ void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const 
   }
 
   // If we don't have enough points for ransac just return empty
-  if (pts0_rsc.size() < 10)
+  if (pts0_rsc.size() < 10) {
+    PRINT_ALL("not enough points for ransac, only %zu matches\n", pts0_rsc.size());
     return;
+  }
 
   // Normalize these points, so we can then do ransac
   // We don't want to do ransac on distorted image uvs since the mapping is nonlinear
@@ -561,15 +553,19 @@ void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const 
   double max_focallength_img0 = std::max(camera_calib.at(id0)->get_K()(0, 0), camera_calib.at(id0)->get_K()(1, 1));
   double max_focallength_img1 = std::max(camera_calib.at(id1)->get_K()(0, 0), camera_calib.at(id1)->get_K()(1, 1));
   double max_focallength = std::max(max_focallength_img0, max_focallength_img1);
+  //for ransac it N at least 15 points
   cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 1 / max_focallength, 0.999, mask_rsc);
 
-  if (mask_rsc.size() != matches_good.size())
+  if (mask_rsc.size() != matches_good.size()) {
+    PRINT_ALL("RANSAC mask size does not match matches size, something went wrong\n");
     return;
+  }
 
   // Loop through all good matches, and only append ones that have passed RANSAC
   for (size_t i = 0; i < matches_good.size(); i++) {
     // Skip if bad ransac id
     if (mask_rsc[i] != 1)
+    //how often this happens?
       continue;
     // Else, lets append this match to the return array!
     matches.push_back(matches_good.at(i));
@@ -583,6 +579,7 @@ void TrackDescriptor::robust_ratio_test(std::vector<std::vector<cv::DMatch>> &ma
     if (match.size() > 1) {
       if (match[1].distance <= std::numeric_limits<float>::epsilon()) {
         match.clear();
+        PRINT_ALL("Warning: 2nd nearest neighbor has zero distance, skipping ratio test for this match\n");
         continue;
       }
       // check distance ratio, remove it if the ratio is larger

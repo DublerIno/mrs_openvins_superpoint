@@ -23,7 +23,7 @@ windows:
   - vio:
       layout: tiled
       panes:
-        - ros2 launch mrs_open_vins_core open_vins.launch.py config_path:=`ros2 pkg prefix mrs_open_vins_core`/share/mrs_open_vins_core/config/simulation_flightforge/estimator_config.yaml
+        - ros2 launch mrs_open_vins_core open_vins.launch.py config_path:=./ov_config_flighforge/estimator_config.yaml
   - vins_republisher:
       layout: tiled
       panes:
