@@ -19,17 +19,35 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cctype>
 #include <deque>
+#include <limits>
 #include <sstream>
 #include <unistd.h>
 #include <vector>
 
+#if ROS_AVAILABLE == 1
 #include <cv_bridge/cv_bridge.h>
+#elif ROS_AVAILABLE == 2
+#include <cv_bridge/cv_bridge.hpp>
+#endif
+#if ROS_AVAILABLE == 1
 #include <ros/ros.h>
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
+#include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/Image.h>
+#elif ROS_AVAILABLE == 2
+#include <rclcpp/rclcpp.hpp>
+#include <rosbag2_cpp/reader.hpp>
+#include <rosbag2_storage/storage_options.hpp>
+#include <sensor_msgs/image_encodings.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#endif
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -56,10 +74,36 @@ int num_margfeats = 0;
 int featslengths = 0;
 int clone_states = 10;
 std::deque<double> clonetimes;
-ros::Time time_start;
+double time_start = 0.0;
 
 // How many cameras we will do visual tracking on (mono=1, stereo=2)
 int max_cameras = 2;
+
+static inline double wall_clock_seconds() {
+  const auto now = std::chrono::steady_clock::now().time_since_epoch();
+  return std::chrono::duration<double>(now).count();
+}
+
+static inline std::string normalize_topic_name(std::string topic) {
+  if (topic.empty() || topic.front() == '/') {
+    return topic;
+  }
+  return "/" + topic;
+}
+
+static inline bool ends_with_case_insensitive(const std::string &value, const std::string &suffix) {
+  if (value.size() < suffix.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < suffix.size(); i++) {
+    const char a = static_cast<char>(std::tolower(static_cast<unsigned char>(value[value.size() - suffix.size() + i])));
+    const char b = static_cast<char>(std::tolower(static_cast<unsigned char>(suffix[i])));
+    if (a != b) {
+      return false;
+    }
+  }
+  return true;
+}
 
 // Our master function for tracking
 void handle_stereo(double time0, double time1, cv::Mat img0, cv::Mat img1);
@@ -74,13 +118,27 @@ int main(int argc, char **argv) {
   }
 
   // Initialize this as a ROS node
+#if ROS_AVAILABLE == 1
   ros::init(argc, argv, "test_tracking");
   auto nh = std::make_shared<ros::NodeHandle>("~");
   nh->param<std::string>("config_path", config_path, config_path);
+#elif ROS_AVAILABLE == 2
+  rclcpp::init(argc, argv);
+  auto options = rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true);
+  auto node = std::make_shared<rclcpp::Node>("test_tracking", options);
+  if (!node->has_parameter("config_path")) {
+    node->declare_parameter<std::string>("config_path", config_path);
+  }
+  node->get_parameter("config_path", config_path);
+#endif
 
   // Load parameters
   auto parser = std::make_shared<ov_core::YamlParser>(config_path, false);
+#if ROS_AVAILABLE == 1
   parser->set_node_handler(nh);
+#elif ROS_AVAILABLE == 2
+  parser->set_node(node);
+#endif
 
   // Verbosity
   std::string verbosity = "DEBUG";
@@ -88,23 +146,66 @@ int main(int argc, char **argv) {
   ov_core::Printer::setPrintLevel(verbosity);
 
   // Our camera topics (left and right stereo)
-  std::string topic_camera0, topic_camera1;
+  std::string topic_camera0 = "/cam0/image_raw";
+  std::string topic_camera1 = "/cam1/image_raw";
+#if ROS_AVAILABLE == 1
   nh->param<std::string>("topic_camera0", topic_camera0, "/cam0/image_raw");
   nh->param<std::string>("topic_camera1", topic_camera1, "/cam1/image_raw");
+#elif ROS_AVAILABLE == 2
+  if (!node->has_parameter("topic_camera0")) {
+    node->declare_parameter<std::string>("topic_camera0", topic_camera0);
+  }
+  if (!node->has_parameter("topic_camera1")) {
+    node->declare_parameter<std::string>("topic_camera1", topic_camera1);
+  }
+  node->get_parameter("topic_camera0", topic_camera0);
+  node->get_parameter("topic_camera1", topic_camera1);
+#endif
   parser->parse_external("relative_config_imucam", "cam" + std::to_string(0), "rostopic", topic_camera0);
   parser->parse_external("relative_config_imucam", "cam" + std::to_string(1), "rostopic", topic_camera1);
+  topic_camera0 = normalize_topic_name(topic_camera0);
+  topic_camera1 = normalize_topic_name(topic_camera1);
+  const std::string topic_camera0_compressed =
+      ends_with_case_insensitive(topic_camera0, "/compressed") ? topic_camera0 : topic_camera0 + "/compressed";
+  const std::string topic_camera1_compressed =
+      ends_with_case_insensitive(topic_camera1, "/compressed") ? topic_camera1 : topic_camera1 + "/compressed";
 
   // Location of the ROS bag we want to read in
-  std::string path_to_bag;
+  std::string path_to_bag = "/home/patrick/datasets/euroc_mav/V1_01_easy.bag";
+  std::string bag_storage_id = "auto";
+#if ROS_AVAILABLE == 1
   nh->param<std::string>("path_bag", path_to_bag, "/home/patrick/datasets/euroc_mav/V1_01_easy.bag");
+#elif ROS_AVAILABLE == 2
+  if (!node->has_parameter("path_bag")) {
+    node->declare_parameter<std::string>("path_bag", path_to_bag);
+  }
+  if (!node->has_parameter("bag_storage_id")) {
+    node->declare_parameter<std::string>("bag_storage_id", bag_storage_id);
+  }
+  node->get_parameter("path_bag", path_to_bag);
+  node->get_parameter("bag_storage_id", bag_storage_id);
+#endif
   // nh->param<std::string>("path_bag", path_to_bag, "/home/patrick/datasets/rpng_aruco/aruco_room_01.bag");
   PRINT_INFO("ros bag path is: %s\n", path_to_bag.c_str());
+  PRINT_INFO("ros bag storage id is: %s\n", bag_storage_id.c_str());
 
   // Get our start location and how much of the bag we want to play
   // Make the bag duration < 0 to just process to the end of the bag
-  double bag_start, bag_durr;
+  double bag_start = 0.0;
+  double bag_durr = -1.0;
+#if ROS_AVAILABLE == 1
   nh->param<double>("bag_start", bag_start, 0);
   nh->param<double>("bag_durr", bag_durr, -1);
+#elif ROS_AVAILABLE == 2
+  if (!node->has_parameter("bag_start")) {
+    node->declare_parameter<double>("bag_start", bag_start);
+  }
+  if (!node->has_parameter("bag_durr")) {
+    node->declare_parameter<double>("bag_durr", bag_durr);
+  }
+  node->get_parameter("bag_start", bag_start);
+  node->get_parameter("bag_durr", bag_durr);
+#endif
 
   //===================================================================================
   //===================================================================================
@@ -124,6 +225,20 @@ int main(int argc, char **argv) {
   double knn_ratio = 0.70;
   bool do_downsizing = false;
   bool use_stereo = false;
+  std::string tracker_type = "KLT";
+
+  // TrackDescriptor / SuperPoint params
+  std::string sp_weights_path =
+      "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin";
+  double sp_threshold = 0.015;
+  bool sp_do_nms = true;
+  bool sp_use_cuda = true;
+  int sp_nfeatures = 500;
+  float sp_scaleFactor = 1.2f;
+  int sp_nlevels = 4;
+  float sp_iniThFAST = 0.015f;
+  float sp_minThFAST = 0.007f;
+
   parser->parse_config("max_cameras", max_cameras, false);
   parser->parse_config("num_pts", num_pts, false);
   parser->parse_config("num_aruco", num_aruco, false);
@@ -135,6 +250,16 @@ int main(int argc, char **argv) {
   parser->parse_config("knn_ratio", knn_ratio, false);
   parser->parse_config("do_downsizing", do_downsizing, false);
   parser->parse_config("use_stereo", use_stereo, false);
+  parser->parse_config("tracker_type", tracker_type, false);
+  parser->parse_config("weights_path", sp_weights_path, false);
+  parser->parse_config("sp_threshold", sp_threshold, false);
+  parser->parse_config("do_nms", sp_do_nms, false);
+  parser->parse_config("use_cuda", sp_use_cuda, false);
+  parser->parse_config("sp_nfeatures", sp_nfeatures, false);
+  parser->parse_config("sp_scaleFactor", sp_scaleFactor, false);
+  parser->parse_config("sp_nlevels", sp_nlevels, false);
+  parser->parse_config("sp_iniThFAST", sp_iniThFAST, false);
+  parser->parse_config("sp_minThFAST", sp_minThFAST, false);
 
   // Histogram method
   ov_core::TrackBase::HistogramMethod method;
@@ -164,6 +289,7 @@ int main(int argc, char **argv) {
   PRINT_DEBUG("min pixel distance: %d\n", min_px_dist);
   PRINT_DEBUG("downsize aruco image: %d\n", do_downsizing);
   PRINT_DEBUG("stereo tracking: %d\n", use_stereo);
+  PRINT_DEBUG("tracker type: %s\n", tracker_type.c_str());
 
   // Fake camera info (we don't need this, as we are not using the normalized coordinates for anything)
   std::unordered_map<size_t, std::shared_ptr<CamBase>> cameras;
@@ -175,16 +301,43 @@ int main(int argc, char **argv) {
     cameras.insert({i, camera_calib});
   }
 
-  // Lets make a feature extractor
-  extractor = new TrackKLT(cameras, num_pts, num_aruco, use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist);
-  // extractor = new TrackDescriptor(cameras, num_pts, num_aruco, use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist,
-  // knn_ratio);
-  // extractor = new TrackAruco(cameras, num_aruco, use_stereo, method, do_downsizing);
+  // Lets make a feature extractor selected at runtime
+  std::string tracker_type_upper = tracker_type;
+  std::transform(tracker_type_upper.begin(), tracker_type_upper.end(), tracker_type_upper.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+  if (tracker_type_upper == "KLT") {
+    extractor = new TrackKLT(cameras, num_pts, num_aruco, use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist);
+  } else if (tracker_type_upper == "DESCRIPTOR" || tracker_type_upper == "TRACKDESCRIPTOR") {
+    extractor = new TrackDescriptor(cameras, num_pts, num_aruco, use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist,
+                                    knn_ratio, sp_weights_path, sp_threshold, sp_do_nms, sp_use_cuda, sp_nfeatures, sp_scaleFactor,
+                                    sp_nlevels, sp_iniThFAST, sp_minThFAST);
+  } else if (tracker_type_upper == "ARUCO" || tracker_type_upper == "TRACKARUCO") {
+    extractor = new TrackAruco(cameras, num_aruco, use_stereo, method, do_downsizing);
+  } else {
+    PRINT_ERROR(RED "invalid tracker_type specified: %s\n" RESET, tracker_type.c_str());
+    PRINT_ERROR(RED "\t- KLT\n" RESET);
+    PRINT_ERROR(RED "\t- DESCRIPTOR\n" RESET);
+    PRINT_ERROR(RED "\t- ARUCO\n" RESET);
+    std::exit(EXIT_FAILURE);
+  }
 
   //===================================================================================
   //===================================================================================
   //===================================================================================
 
+  // Record the start time for our FPS counter
+  time_start = wall_clock_seconds();
+
+  // Our stereo pair we have
+  bool has_left = false;
+  bool has_right = false;
+  bool processed_any = false;
+  cv::Mat img0, img1;
+  double time0 = 0.0;
+  double time1 = 0.0;
+
+#if ROS_AVAILABLE == 1
   // Load rosbag here, and find messages we can play
   rosbag::Bag bag;
   bag.open(path_to_bag, rosbag::bagmode::Read);
@@ -211,15 +364,8 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  // Record the start time for our FPS counter
-  time_start = ros::Time::now();
-
-  // Our stereo pair we have
-  bool has_left = false;
-  bool has_right = false;
-  cv::Mat img0, img1;
-  double time0 = time_init.toSec();
-  double time1 = time_init.toSec();
+  time0 = time_init.toSec();
+  time1 = time_init.toSec();
 
   // Step through the rosbag
   for (const rosbag::MessageInstance &m : view) {
@@ -228,9 +374,11 @@ int main(int argc, char **argv) {
     if (!ros::ok())
       break;
 
-    // Handle LEFT camera
+    const std::string msg_topic = normalize_topic_name(m.getTopic());
+
+    // Handle LEFT camera (raw image)
     sensor_msgs::Image::ConstPtr s0 = m.instantiate<sensor_msgs::Image>();
-    if (s0 != nullptr && m.getTopic() == topic_camera0) {
+    if (s0 != nullptr && msg_topic == topic_camera0) {
       // Get the image
       cv_bridge::CvImageConstPtr cv_ptr;
       try {
@@ -242,13 +390,26 @@ int main(int argc, char **argv) {
       // Save to our temp variable
       has_left = true;
       cv::equalizeHist(cv_ptr->image, img0);
-      // img0 = cv_ptr->image.clone();
       time0 = cv_ptr->header.stamp.toSec();
     }
+    // Handle LEFT camera (compressed image)
+    sensor_msgs::CompressedImage::ConstPtr c0 = m.instantiate<sensor_msgs::CompressedImage>();
+    if (c0 != nullptr && msg_topic == topic_camera0_compressed) {
+      cv_bridge::CvImagePtr cv_ptr;
+      try {
+        cv_ptr = cv_bridge::toCvCopy(c0, sensor_msgs::image_encodings::MONO8);
+      } catch (cv_bridge::Exception &e) {
+        PRINT_ERROR(RED "cv_bridge exception: %s\n" RESET, e.what());
+        continue;
+      }
+      has_left = true;
+      cv::equalizeHist(cv_ptr->image, img0);
+      time0 = c0->header.stamp.toSec();
+    }
 
-    //  Handle RIGHT camera
+    // Handle RIGHT camera (raw image)
     sensor_msgs::Image::ConstPtr s1 = m.instantiate<sensor_msgs::Image>();
-    if (s1 != nullptr && m.getTopic() == topic_camera1) {
+    if (s1 != nullptr && msg_topic == topic_camera1) {
       // Get the image
       cv_bridge::CvImageConstPtr cv_ptr;
       try {
@@ -260,19 +421,185 @@ int main(int argc, char **argv) {
       // Save to our temp variable
       has_right = true;
       cv::equalizeHist(cv_ptr->image, img1);
-      // img1 = cv_ptr->image.clone();
       time1 = cv_ptr->header.stamp.toSec();
     }
+    // Handle RIGHT camera (compressed image)
+    sensor_msgs::CompressedImage::ConstPtr c1 = m.instantiate<sensor_msgs::CompressedImage>();
+    if (c1 != nullptr && msg_topic == topic_camera1_compressed) {
+      cv_bridge::CvImagePtr cv_ptr;
+      try {
+        cv_ptr = cv_bridge::toCvCopy(c1, sensor_msgs::image_encodings::MONO8);
+      } catch (cv_bridge::Exception &e) {
+        PRINT_ERROR(RED "cv_bridge exception: %s\n" RESET, e.what());
+        continue;
+      }
+      has_right = true;
+      cv::equalizeHist(cv_ptr->image, img1);
+      time1 = c1->header.stamp.toSec();
+    }
 
-    // If we have both left and right, then process
-    if (has_left && has_right) {
-      // process
+    // Process either stereo pair or mono frame
+    if ((max_cameras == 2 && has_left && has_right) || (max_cameras == 1 && has_left)) {
       handle_stereo(time0, time1, img0, img1);
-      // reset bools
+      processed_any = true;
       has_left = false;
       has_right = false;
     }
   }
+#elif ROS_AVAILABLE == 2
+  if (bag_storage_id == "auto") {
+    if (ends_with_case_insensitive(path_to_bag, ".mcap")) {
+      bag_storage_id = "mcap";
+    } else if (ends_with_case_insensitive(path_to_bag, ".db3") || ends_with_case_insensitive(path_to_bag, ".sqlite3")) {
+      bag_storage_id = "sqlite3";
+    } else {
+      bag_storage_id = "sqlite3";
+    }
+  }
+
+  rosbag2_storage::StorageOptions storage_options;
+  storage_options.uri = path_to_bag;
+  rosbag2_cpp::ConverterOptions converter_options;
+  converter_options.input_serialization_format = "cdr";
+  converter_options.output_serialization_format = "cdr";
+
+  std::vector<std::string> storage_candidates;
+  storage_candidates.push_back(bag_storage_id);
+  if (bag_storage_id == "mcap") {
+    storage_candidates.push_back("sqlite3");
+  } else if (bag_storage_id == "sqlite3") {
+    storage_candidates.push_back("mcap");
+  }
+
+  bool reader_opened = false;
+  std::string open_errors;
+  rosbag2_cpp::Reader reader;
+  for (const auto &candidate : storage_candidates) {
+    try {
+      storage_options.storage_id = candidate;
+      PRINT_INFO("trying rosbag2 storage backend: %s\n", candidate.c_str());
+      reader.open(storage_options, converter_options);
+      reader_opened = true;
+      PRINT_INFO("opened bag with rosbag2 storage backend: %s\n", candidate.c_str());
+      break;
+    } catch (const std::exception &e) {
+      open_errors += candidate + ": " + e.what() + "\n";
+    }
+  }
+  if (!reader_opened) {
+    PRINT_ERROR(RED "failed to open bag '%s' with tested backends:\n%s\n" RESET, path_to_bag.c_str(), open_errors.c_str());
+    PRINT_ERROR(RED "try running with --ros-args -p bag_storage_id:=mcap (or :=sqlite3)\n" RESET);
+    rclcpp::shutdown();
+    return EXIT_FAILURE;
+  }
+
+  const int64_t bag_start_offset_ns = static_cast<int64_t>(bag_start * 1e9);
+  const int64_t bag_duration_ns = static_cast<int64_t>(bag_durr * 1e9);
+  int64_t bag_window_start_ns = 0;
+  int64_t bag_window_end_ns = std::numeric_limits<int64_t>::max();
+  bool window_initialized = false;
+
+  rclcpp::Serialization<sensor_msgs::msg::Image> serializer_image;
+  rclcpp::Serialization<sensor_msgs::msg::CompressedImage> serializer_compressed;
+
+  while (reader.has_next()) {
+
+    if (!rclcpp::ok()) {
+      break;
+    }
+
+    auto msg = reader.read_next();
+    const std::string topic = normalize_topic_name(msg->topic_name);
+    const int64_t msg_time_ns =
+        (msg->send_timestamp > 0) ? static_cast<int64_t>(msg->send_timestamp) : static_cast<int64_t>(msg->recv_timestamp);
+
+    if (!window_initialized) {
+      bag_window_start_ns = msg_time_ns + bag_start_offset_ns;
+      if (bag_durr >= 0.0) {
+        bag_window_end_ns = bag_window_start_ns + bag_duration_ns;
+      }
+      PRINT_DEBUG("time start = %.6f\n", static_cast<double>(bag_window_start_ns) * 1e-9);
+      if (bag_durr >= 0.0) {
+        PRINT_DEBUG("time end   = %.6f\n", static_cast<double>(bag_window_end_ns) * 1e-9);
+      } else {
+        PRINT_DEBUG("time end   = end_of_bag\n");
+      }
+      time0 = static_cast<double>(bag_window_start_ns) * 1e-9;
+      time1 = time0;
+      window_initialized = true;
+    }
+
+    if (msg_time_ns < bag_window_start_ns) {
+      continue;
+    }
+    if (bag_durr >= 0.0 && msg_time_ns > bag_window_end_ns) {
+      break;
+    }
+
+    const bool is_left_raw = (topic == topic_camera0);
+    const bool is_left_compressed = (topic == topic_camera0_compressed);
+    const bool is_right_raw = (topic == topic_camera1);
+    const bool is_right_compressed = (topic == topic_camera1_compressed);
+    if (!is_left_raw && !is_left_compressed && !is_right_raw && !is_right_compressed) {
+      continue;
+    }
+
+    cv_bridge::CvImagePtr cv_ptr;
+    double stamp_sec = 0.0;
+    rclcpp::SerializedMessage serialized_msg(*msg->serialized_data);
+    if (is_left_raw || is_right_raw) {
+      sensor_msgs::msg::Image image_msg;
+      serializer_image.deserialize_message(&serialized_msg, &image_msg);
+      auto image_ptr = std::make_shared<sensor_msgs::msg::Image>(image_msg);
+      try {
+        cv_ptr = cv_bridge::toCvCopy(image_ptr, sensor_msgs::image_encodings::MONO8);
+      } catch (cv_bridge::Exception &e) {
+        PRINT_ERROR(RED "cv_bridge exception: %s\n" RESET, e.what());
+        continue;
+      }
+      stamp_sec = static_cast<double>(image_ptr->header.stamp.sec) + static_cast<double>(image_ptr->header.stamp.nanosec) * 1e-9;
+    } else {
+      sensor_msgs::msg::CompressedImage image_msg;
+      serializer_compressed.deserialize_message(&serialized_msg, &image_msg);
+      auto image_ptr = std::make_shared<sensor_msgs::msg::CompressedImage>(image_msg);
+      try {
+        cv_ptr = cv_bridge::toCvCopy(image_ptr, sensor_msgs::image_encodings::MONO8);
+      } catch (cv_bridge::Exception &e) {
+        PRINT_ERROR(RED "cv_bridge exception: %s\n" RESET, e.what());
+        continue;
+      }
+      stamp_sec = static_cast<double>(image_ptr->header.stamp.sec) + static_cast<double>(image_ptr->header.stamp.nanosec) * 1e-9;
+    }
+    if (is_left_raw || is_left_compressed) {
+      has_left = true;
+      cv::equalizeHist(cv_ptr->image, img0);
+      time0 = stamp_sec;
+    } else if (is_right_raw || is_right_compressed) {
+      has_right = true;
+      cv::equalizeHist(cv_ptr->image, img1);
+      time1 = stamp_sec;
+    }
+
+    if ((max_cameras == 2 && has_left && has_right) || (max_cameras == 1 && has_left)) {
+      handle_stereo(time0, time1, img0, img1);
+      processed_any = true;
+      has_left = false;
+      has_right = false;
+    }
+  }
+
+  if (!processed_any) {
+    if (max_cameras == 1) {
+      PRINT_ERROR(RED "No images found in bag window for topic:\n\t%s\n\t(or compressed: %s)\n" RESET, topic_camera0.c_str(),
+                  topic_camera0_compressed.c_str());
+    } else {
+      PRINT_ERROR(RED "No synchronized image pairs found in bag window for topics:\n\t%s\n\t%s\n\t(or compressed: %s, %s)\n" RESET,
+                  topic_camera0.c_str(), topic_camera1.c_str(), topic_camera0_compressed.c_str(), topic_camera1_compressed.c_str());
+    }
+    rclcpp::shutdown();
+    return EXIT_FAILURE;
+  }
+#endif
 
   // Done!
   return EXIT_SUCCESS;
@@ -362,11 +689,10 @@ void handle_stereo(double time0, double time1, cv::Mat img0, cv::Mat img1) {
 
   // Debug print out what our current processing speed it
   // We want the FPS to be as high as possible
-  ros::Time time_curr = ros::Time::now();
-  // if (time_curr.toSec()-time_start.toSec() > 2) {
+  const double time_curr = wall_clock_seconds();
   if (frames > 60) {
     // Calculate the FPS
-    double fps = (double)frames / (time_curr.toSec() - time_start.toSec());
+    double fps = (double)frames / (time_curr - time_start);
     double lpf = (double)num_lostfeats / frames;
     double fpf = (double)featslengths / num_lostfeats;
     double mpf = (double)num_margfeats / frames;
