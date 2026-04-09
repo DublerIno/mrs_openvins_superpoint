@@ -75,6 +75,9 @@ int featslengths = 0;
 int clone_states = 10;
 std::deque<double> clonetimes;
 double time_start = 0.0;
+int proc_width = 0;
+int proc_height = 0;
+bool enable_dynamic_mask = true;
 
 // How many cameras we will do visual tracking on (mono=1, stereo=2)
 int max_cameras = 2;
@@ -89,6 +92,26 @@ static inline std::string normalize_topic_name(std::string topic) {
     return topic;
   }
   return "/" + topic;
+}
+
+static inline void preprocess_image(const cv::Mat &src, cv::Mat &dst, double image_scale, int max_width) {
+  cv::Mat equalized;
+  cv::equalizeHist(src, equalized);
+
+  double effective_scale = image_scale;
+  if (effective_scale <= 0.0) {
+    effective_scale = 1.0;
+  }
+  if (max_width > 0 && equalized.cols > max_width) {
+    const double width_scale = static_cast<double>(max_width) / static_cast<double>(equalized.cols);
+    effective_scale = std::min(effective_scale, width_scale);
+  }
+
+  if (std::abs(effective_scale - 1.0) < 1e-6) {
+    dst = equalized;
+    return;
+  }
+  cv::resize(equalized, dst, cv::Size(), effective_scale, effective_scale, cv::INTER_AREA);
 }
 
 static inline bool ends_with_case_insensitive(const std::string &value, const std::string &suffix) {
@@ -193,6 +216,8 @@ int main(int argc, char **argv) {
   // Make the bag duration < 0 to just process to the end of the bag
   double bag_start = 0.0;
   double bag_durr = -1.0;
+  double image_scale = 1.0;
+  int max_width = 0;
 #if ROS_AVAILABLE == 1
   nh->param<double>("bag_start", bag_start, 0);
   nh->param<double>("bag_durr", bag_durr, -1);
@@ -203,9 +228,22 @@ int main(int argc, char **argv) {
   if (!node->has_parameter("bag_durr")) {
     node->declare_parameter<double>("bag_durr", bag_durr);
   }
+  if (!node->has_parameter("image_scale")) {
+    node->declare_parameter<double>("image_scale", image_scale);
+  }
+  if (!node->has_parameter("max_width")) {
+    node->declare_parameter<int>("max_width", max_width);
+  }
   node->get_parameter("bag_start", bag_start);
   node->get_parameter("bag_durr", bag_durr);
+  node->get_parameter("image_scale", image_scale);
+  node->get_parameter("max_width", max_width);
 #endif
+  parser->parse_config("image_scale", image_scale, false);
+  parser->parse_config("max_width", max_width, false);
+  parser->parse_config("enable_dynamic_mask", enable_dynamic_mask, false);
+  PRINT_INFO("tracking image scale: %.3f (max_width=%d)\n", image_scale, max_width);
+  PRINT_INFO("enable dynamic mask: %d\n", enable_dynamic_mask);
 
   //===================================================================================
   //===================================================================================
@@ -389,7 +427,7 @@ int main(int argc, char **argv) {
       }
       // Save to our temp variable
       has_left = true;
-      cv::equalizeHist(cv_ptr->image, img0);
+      preprocess_image(cv_ptr->image, img0, image_scale, max_width);
       time0 = cv_ptr->header.stamp.toSec();
     }
     // Handle LEFT camera (compressed image)
@@ -403,7 +441,7 @@ int main(int argc, char **argv) {
         continue;
       }
       has_left = true;
-      cv::equalizeHist(cv_ptr->image, img0);
+      preprocess_image(cv_ptr->image, img0, image_scale, max_width);
       time0 = c0->header.stamp.toSec();
     }
 
@@ -420,7 +458,7 @@ int main(int argc, char **argv) {
       }
       // Save to our temp variable
       has_right = true;
-      cv::equalizeHist(cv_ptr->image, img1);
+      preprocess_image(cv_ptr->image, img1, image_scale, max_width);
       time1 = cv_ptr->header.stamp.toSec();
     }
     // Handle RIGHT camera (compressed image)
@@ -434,7 +472,7 @@ int main(int argc, char **argv) {
         continue;
       }
       has_right = true;
-      cv::equalizeHist(cv_ptr->image, img1);
+      preprocess_image(cv_ptr->image, img1, image_scale, max_width);
       time1 = c1->header.stamp.toSec();
     }
 
@@ -572,11 +610,11 @@ int main(int argc, char **argv) {
     }
     if (is_left_raw || is_left_compressed) {
       has_left = true;
-      cv::equalizeHist(cv_ptr->image, img0);
+      preprocess_image(cv_ptr->image, img0, image_scale, max_width);
       time0 = stamp_sec;
     } else if (is_right_raw || is_right_compressed) {
       has_right = true;
-      cv::equalizeHist(cv_ptr->image, img1);
+      preprocess_image(cv_ptr->image, img1, image_scale, max_width);
       time1 = stamp_sec;
     }
 
@@ -610,23 +648,28 @@ int main(int argc, char **argv) {
  */
 void handle_stereo(double time0, double time1, cv::Mat img0, cv::Mat img1) {
 
+  proc_width = img0.cols;
+  proc_height = img0.rows;
+
   // Animate our dynamic mask moving
   // Very simple ball bounding around the screen example
   cv::Mat mask = cv::Mat::zeros(cv::Size(img0.cols, img0.rows), CV_8UC1);
-  static cv::Point2f ball_center;
-  static cv::Point2f ball_velocity;
-  if (ball_velocity.x == 0 || ball_velocity.y == 0) {
-    ball_center.x = (float)img0.cols / 2.0f;
-    ball_center.y = (float)img0.rows / 2.0f;
-    ball_velocity.x = 2.5;
-    ball_velocity.y = 2.5;
+  if (enable_dynamic_mask) {
+    static cv::Point2f ball_center;
+    static cv::Point2f ball_velocity;
+    if (ball_velocity.x == 0 || ball_velocity.y == 0) {
+      ball_center.x = (float)img0.cols / 2.0f;
+      ball_center.y = (float)img0.rows / 2.0f;
+      ball_velocity.x = 2.5;
+      ball_velocity.y = 2.5;
+    }
+    ball_center += ball_velocity;
+    if (ball_center.x < 0 || (int)ball_center.x > img0.cols)
+      ball_velocity.x *= -1;
+    if (ball_center.y < 0 || (int)ball_center.y > img0.rows)
+      ball_velocity.y *= -1;
+    cv::circle(mask, ball_center, 100, cv::Scalar(255), cv::FILLED);
   }
-  ball_center += ball_velocity;
-  if (ball_center.x < 0 || (int)ball_center.x > img0.cols)
-    ball_velocity.x *= -1;
-  if (ball_center.y < 0 || (int)ball_center.y > img0.rows)
-    ball_velocity.y *= -1;
-  cv::circle(mask, ball_center, 100, cv::Scalar(255), cv::FILLED);
 
   // Process this new image
   ov_core::CameraData message;
@@ -697,7 +740,8 @@ void handle_stereo(double time0, double time1, cv::Mat img0, cv::Mat img1) {
     double fpf = (double)featslengths / num_lostfeats;
     double mpf = (double)num_margfeats / frames;
     // DEBUG PRINT OUT
-    PRINT_DEBUG("fps = %.2f | lost_feats/frame = %.2f | track_length/lost_feat = %.2f | marg_tracks/frame = %.2f\n", fps, lpf, fpf, mpf);
+    PRINT_DEBUG("res = %dx%d | fps = %.2f | lost_feats/frame = %.2f | track_length/lost_feat = %.2f | marg_tracks/frame = %.2f\n", proc_width,
+                proc_height, fps, lpf, fpf, mpf);
     // Reset variables
     frames = 0;
     time_start = time_curr;

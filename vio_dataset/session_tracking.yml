@@ -12,4 +12,4 @@ windows:
       layout: even-vertical
       panes:
         - echo "OV_BAG_PATH=${OV_BAG_PATH}"; echo "OV_CONFIG_PATH=${OV_CONFIG_PATH}"; echo "Ready. Run commands here if you want manual control."
-        - ros2 run ov_core test_tracking "${OV_CONFIG_PATH}" --ros-args -p path_bag:="${OV_BAG_PATH}" -p bag_storage_id:=auto -p tracker_type:=DESCRIPTOR -p max_cameras:=1 -p use_stereo:=false
+        - ros2 run ov_core test_tracking "${OV_CONFIG_PATH}" --ros-args -p path_bag:="${OV_BAG_PATH}" -p bag_storage_id:=auto -p tracker_type:=DESCRIPTOR -p max_cameras:=1 -p use_stereo:=false -p image_scale:=0.5 -p enable_dynamic_mask:=false
