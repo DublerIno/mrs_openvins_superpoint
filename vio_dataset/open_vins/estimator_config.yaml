@@ -105,18 +105,18 @@ num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
 histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
 
 #superpoint params
-weights_path:"/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin" #absolute path to cnn weights
+weights_path: "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/superpoint_v1.pth" # absolute path to SuperPoint .pth weights
 do_nms: true 
 
-use_cuda: true #true to use cuda graphical accelaration
-sp_threshold: 0.50 #nehraje roli - pouziva nejdriv iniTh a pak minTh
+use_cuda: true # use CUDA acceleration in SuperPoint Python bridge
+sp_threshold: 0.015 # lower confidence threshold to keep more SuperPoint detections
 #sp extractor
 sp_nfeatures:  400
 sp_scaleFactor: 1.2
 sp_nlevels: 1 #crashuje pri vic, u jedne z implementaci jde
 sp_iniThFAST: 0.065
 sp_minThFAST: 0.05
-
+ 
 
 
 

@@ -24,8 +24,6 @@
 
 #include "TrackBase.h"
 
-#include "SPextractor.h"
-
 namespace ov_core {
 
 /**
@@ -83,7 +81,10 @@ public:
       grid_y(gridy),
       min_px_dist(minpxdist),
       knn_ratio(knnratio),
-      sp0(sp_nfeatures, sp_scaleFactor, sp_nlevels, sp_iniThFAST, sp_minThFAST, weights_path, sp_threshold, do_nms, use_cuda)  {}
+      sp_weights_path(weights_path),
+      sp_threshold(sp_threshold),
+      sp_do_nms(do_nms),
+      sp_use_cuda(use_cuda) {}
 
   /**
    * @brief Process a new image
@@ -203,12 +204,12 @@ protected:
   // Descriptor matrices
   std::unordered_map<size_t, cv::Mat> desc_last;
 
-  ORB_SLAM2::ORBextractor sp0;
-  //Superpoint params
-  //std::string weights_path_;
-  //double sp_threshold_;
-  //bool do_nms_;
-  //bool use_cuda_;
+  // Python SuperPoint bridge parameters (used by mono detection)
+  std::string sp_weights_path;
+  double sp_threshold;
+  bool sp_do_nms;
+  bool sp_use_cuda;
+
 };
 
 } // namespace ov_core

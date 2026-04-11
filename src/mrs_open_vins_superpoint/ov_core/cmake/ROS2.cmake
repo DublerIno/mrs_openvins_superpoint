@@ -8,11 +8,6 @@ find_package(sensor_msgs REQUIRED)
 find_package(rosbag2_cpp REQUIRED)
 find_package(rosbag2_storage REQUIRED)
 
-###TORCH FOR SUPERPOINT
-list(PREPEND CMAKE_PREFIX_PATH "/opt/libtorch")
-find_package(Torch REQUIRED)
-
-
 # Describe ROS project
 option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON)
 if (NOT ENABLE_ROS)
@@ -52,9 +47,6 @@ list(APPEND LIBRARY_SOURCES
         src/feat/FeatureDatabase.cpp
         src/feat/FeatureInitializer.cpp
         src/utils/print.cpp
-        ###do i need them exposed as lib ?
-        src/track/SuperPoint.cpp
-        src/track/SPextractor.cpp
 )
 file(GLOB_RECURSE LIBRARY_HEADERS "src/*.h")
 add_library(ov_core_lib SHARED ${LIBRARY_SOURCES} ${LIBRARY_HEADERS})
@@ -64,16 +56,9 @@ ament_target_dependencies(ov_core_lib rclcpp cv_bridge)
 #to force C++17:
 #target_compile_features(ov_core_lib PUBLIC cxx_std_17)
 
-#TORCH for Superpoint
 target_link_libraries(ov_core_lib 
         ${thirdparty_libraries}
-        ${TORCH_LIBRARIES}
         )
-set_target_properties(ov_core_lib PROPERTIES
-  BUILD_RPATH "${TORCH_INSTALL_PREFIX}/lib"
-  INSTALL_RPATH "${TORCH_INSTALL_PREFIX}/lib"
-)
-###
 
 target_include_directories(ov_core_lib PUBLIC src/)
 install(TARGETS ov_core_lib

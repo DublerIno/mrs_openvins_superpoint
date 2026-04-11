@@ -21,8 +21,14 @@
 
 #include "TrackDescriptor.h"
 
-//NEW
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
 #include <limits>
+#include <sstream>
+#include <string>
+#include <unistd.h>
+
 #include <opencv2/features2d.hpp>
 
 #include "Grider_FAST.h"
@@ -31,6 +37,110 @@
 #include "feat/FeatureDatabase.h"
 
 using namespace ov_core;
+
+namespace {
+
+std::string shell_escape(const std::string &input) {
+  std::string out = "'";
+  for (const char c : input) {
+    if (c == '\'') {
+      out += "'\\''";
+    } else {
+      out += c;
+    }
+  }
+  out += "'";
+  return out;
+}
+
+std::string create_temp_path(const std::string &suffix) {
+  char tmpl[] = "/tmp/ov_sp_XXXXXX";
+  const int fd = mkstemp(tmpl);
+  if (fd >= 0) {
+    close(fd);
+  }
+  std::string path = std::string(tmpl) + suffix;
+  std::remove(tmpl);
+  return path;
+}
+
+bool run_superpoint_python(const cv::Mat &img, const std::string &weights_path, double conf_thresh, bool do_nms, bool use_cuda,
+                           std::vector<cv::KeyPoint> &pts_out, cv::Mat &desc_out) {
+
+  if (img.empty() || weights_path.empty()) {
+    return false;
+  }
+
+  std::string script_path = __FILE__;
+  const size_t last_slash = script_path.find_last_of('/');
+  if (last_slash == std::string::npos) {
+    return false;
+  }
+  script_path = script_path.substr(0, last_slash + 1) + "superpoint_pytorch_bridge.py";
+  std::ifstream script_file(script_path);
+  if (!script_file.good()) {
+    return false;
+  }
+
+  const std::string image_path = create_temp_path(".png");
+  const std::string output_path = create_temp_path(".yml");
+  if (!cv::imwrite(image_path, img)) {
+    return false;
+  }
+
+  const int nms_dist = do_nms ? 4 : 0;
+  const char *python_env = std::getenv("OV_SUPERPOINT_PYTHON");
+  const std::string python_bin = (python_env != nullptr && python_env[0] != '\0') ? std::string(python_env) : std::string("python3");
+  std::ostringstream cmd;
+  cmd << shell_escape(python_bin) << " " << shell_escape(script_path) << " --weights " << shell_escape(weights_path) << " --image "
+      << shell_escape(image_path)
+      << " --output " << shell_escape(output_path) << " --conf_thresh " << conf_thresh << " --nms_dist " << nms_dist << " --cuda "
+      << (use_cuda ? 1 : 0);
+
+  const int ret = std::system(cmd.str().c_str());
+  std::remove(image_path.c_str());
+  if (ret != 0) {
+    std::remove(output_path.c_str());
+    return false;
+  }
+
+  cv::FileStorage fs(output_path, cv::FileStorage::READ);
+  std::remove(output_path.c_str());
+  if (!fs.isOpened()) {
+    return false;
+  }
+
+  cv::Mat points_mat;
+  cv::Mat desc_mat;
+  fs["points"] >> points_mat;
+  fs["descriptors"] >> desc_mat;
+
+  pts_out.clear();
+  desc_out.release();
+
+  if (points_mat.empty() || desc_mat.empty()) {
+    return true;
+  }
+
+  if (points_mat.type() != CV_32FC2) {
+    points_mat.convertTo(points_mat, CV_32FC2);
+  }
+  if (desc_mat.type() != CV_32F) {
+    desc_mat.convertTo(desc_mat, CV_32F);
+  }
+
+  const size_t usable_count = std::min((size_t)points_mat.rows, (size_t)desc_mat.rows);
+  pts_out.reserve(usable_count);
+  for (size_t i = 0; i < usable_count; i++) {
+    const cv::Vec2f pt = points_mat.at<cv::Vec2f>((int)i, 0);
+    pts_out.emplace_back(cv::Point2f(pt[0], pt[1]), 1.0f);
+    desc_out.push_back(desc_mat.row((int)i));
+  }
+
+  return true;
+}
+
+} // namespace
 
 //NEW Function - chooses camera based on image message
 void TrackDescriptor::feed_new_camera(const CameraData &message) {
@@ -379,7 +489,12 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   // For all new points, extract their descriptors
   cv::Mat desc0_ext;
   std::vector<cv::KeyPoint> pts0_ext;
-  this->sp0(img0,cv::Mat(),pts0_ext,desc0_ext); //syntax for calling operator() of SPextractor class
+  const bool python_ok = run_superpoint_python(img0, sp_weights_path, sp_threshold, sp_do_nms, sp_use_cuda, pts0_ext, desc0_ext);
+  if (!python_ok) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python SuperPoint failed, falling back to FAST+ORB\n" RESET);
+    Grider_FAST::perform_griding(img0, cv::Mat(), pts0_ext, num_features, grid_x, grid_y, threshold, true);
+    orb0->compute(img0, pts0_ext, desc0_ext);
+  }
 
   if (pts0_raw != nullptr)
     *pts0_raw = pts0_ext;
@@ -412,7 +527,7 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   }
 }
 
-//not superpoint yet
+//dont care 
 void TrackDescriptor::perform_detection_stereo(const cv::Mat &img0, const cv::Mat &img1, const cv::Mat &mask0, const cv::Mat &mask1,
                                                std::vector<cv::KeyPoint> &pts0, std::vector<cv::KeyPoint> &pts1, cv::Mat &desc0,
                                                cv::Mat &desc1, size_t cam_id0, size_t cam_id1, std::vector<size_t> &ids0,

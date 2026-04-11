@@ -56,12 +56,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-sign
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3 -Wall -Wuninitialized -Wmaybe-uninitialized -fno-omit-frame-pointer")
 
 
-###TORCH SUPPORT FOR SUPERPOINT
-list(PREPEND CMAKE_PREFIX_PATH "/opt/libtorch")
-find_package(Torch REQUIRED)
-message(STATUS "TORCH: ${Torch_VERSION} | TORCH LIBS: ${TORCH_LIBRARIES}")
-
-
 # Find our ROS version!
 # NOTE: Default to using the ROS1 package if both are in our enviroment
 # NOTE: https://github.com/romainreignier/share_ros1_ros2_lib_demo
@@ -77,7 +71,6 @@ else ()
     message(STATUS "No ROS versions found or building with ROS disabled, building ROS1.cmake without ROS")
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ROS1.cmake)
 endif ()
-
 
 
 
