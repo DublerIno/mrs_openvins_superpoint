@@ -23,11 +23,16 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <array>
 #include <fstream>
 #include <limits>
 #include <sstream>
 #include <string>
 #include <unistd.h>
+#include <vector>
+#include <sys/wait.h>
+#include <signal.h>
 
 #include <opencv2/features2d.hpp>
 
@@ -40,107 +45,213 @@ using namespace ov_core;
 
 namespace {
 
-std::string shell_escape(const std::string &input) {
-  std::string out = "'";
-  for (const char c : input) {
-    if (c == '\'') {
-      out += "'\\''";
-    } else {
-      out += c;
+bool write_all(int fd, const uint8_t *data, size_t size) {
+  size_t written = 0;
+  while (written < size) {
+    ssize_t ret = ::write(fd, data + written, size - written);
+    if (ret <= 0) {
+      return false;
     }
+    written += static_cast<size_t>(ret);
   }
-  out += "'";
-  return out;
+  return true;
 }
 
-std::string create_temp_path(const std::string &suffix) {
-  char tmpl[] = "/tmp/ov_sp_XXXXXX";
-  const int fd = mkstemp(tmpl);
-  if (fd >= 0) {
-    close(fd);
+bool read_all(int fd, uint8_t *data, size_t size) {
+  size_t read_total = 0;
+  while (read_total < size) {
+    ssize_t ret = ::read(fd, data + read_total, size - read_total);
+    if (ret <= 0) {
+      return false;
+    }
+    read_total += static_cast<size_t>(ret);
   }
-  std::string path = std::string(tmpl) + suffix;
-  std::remove(tmpl);
-  return path;
+  return true;
 }
 
-bool run_superpoint_python(const cv::Mat &img, const std::string &weights_path, double conf_thresh, bool do_nms, bool use_cuda,
-                           std::vector<cv::KeyPoint> &pts_out, cv::Mat &desc_out) {
+} // namespace
 
-  if (img.empty() || weights_path.empty()) {
+TrackDescriptor::~TrackDescriptor() {
+  stop_superpoint_worker();
+}
+
+bool TrackDescriptor::start_superpoint_worker() {
+  if (sp_worker_started) {
+    return true;
+  }
+  if (sp_worker_failed || sp_weights_path.empty()) {
     return false;
   }
 
   std::string script_path = __FILE__;
   const size_t last_slash = script_path.find_last_of('/');
   if (last_slash == std::string::npos) {
+    sp_worker_failed = true;
     return false;
   }
-  script_path = script_path.substr(0, last_slash + 1) + "superpoint_pytorch_bridge.py";
+  script_path = script_path.substr(0, last_slash + 1) + "superpoint_pytorch_worker.py";
   std::ifstream script_file(script_path);
   if (!script_file.good()) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker script missing: %s\n" RESET, script_path.c_str());
+    sp_worker_failed = true;
     return false;
   }
 
-  const std::string image_path = create_temp_path(".png");
-  const std::string output_path = create_temp_path(".yml");
-  if (!cv::imwrite(image_path, img)) {
+  int to_worker[2] = {-1, -1};
+  int from_worker[2] = {-1, -1};
+  if (pipe(to_worker) != 0 || pipe(from_worker) != 0) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: failed to create pipes for python worker\n" RESET);
+    if (to_worker[0] >= 0) close(to_worker[0]);
+    if (to_worker[1] >= 0) close(to_worker[1]);
+    if (from_worker[0] >= 0) close(from_worker[0]);
+    if (from_worker[1] >= 0) close(from_worker[1]);
+    sp_worker_failed = true;
     return false;
   }
 
-  const int nms_dist = do_nms ? 4 : 0;
   const char *python_env = std::getenv("OV_SUPERPOINT_PYTHON");
   const std::string python_bin = (python_env != nullptr && python_env[0] != '\0') ? std::string(python_env) : std::string("python3");
-  std::ostringstream cmd;
-  cmd << shell_escape(python_bin) << " " << shell_escape(script_path) << " --weights " << shell_escape(weights_path) << " --image "
-      << shell_escape(image_path)
-      << " --output " << shell_escape(output_path) << " --conf_thresh " << conf_thresh << " --nms_dist " << nms_dist << " --cuda "
-      << (use_cuda ? 1 : 0);
+  const std::string conf_str = std::to_string(sp_threshold);
+  const std::string nms_str = std::to_string(sp_do_nms ? 4 : 0);
+  const std::string cuda_str = std::to_string(sp_use_cuda ? 1 : 0);
 
-  const int ret = std::system(cmd.str().c_str());
-  std::remove(image_path.c_str());
-  if (ret != 0) {
-    std::remove(output_path.c_str());
+  pid_t pid = fork();
+  if (pid < 0) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: fork failed for python worker\n" RESET);
+    close(to_worker[0]);
+    close(to_worker[1]);
+    close(from_worker[0]);
+    close(from_worker[1]);
+    sp_worker_failed = true;
     return false;
   }
 
-  cv::FileStorage fs(output_path, cv::FileStorage::READ);
-  std::remove(output_path.c_str());
-  if (!fs.isOpened()) {
+  if (pid == 0) {
+    dup2(to_worker[0], STDIN_FILENO);
+    dup2(from_worker[1], STDOUT_FILENO);
+    close(to_worker[0]);
+    close(to_worker[1]);
+    close(from_worker[0]);
+    close(from_worker[1]);
+
+    execlp(python_bin.c_str(), python_bin.c_str(), script_path.c_str(),
+           "--weights", sp_weights_path.c_str(),
+           "--conf_thresh", conf_str.c_str(),
+           "--nms_dist", nms_str.c_str(),
+           "--cuda", cuda_str.c_str(),
+           (char *)nullptr);
+    _exit(127);
+  }
+
+  close(to_worker[0]);
+  close(from_worker[1]);
+  sp_worker_stdin_fd = to_worker[1];
+  sp_worker_stdout_fd = from_worker[0];
+  sp_worker_pid = pid;
+  sp_worker_started = true;
+  PRINT_INFO("[TRACK-DESC]: started persistent python SuperPoint worker (pid=%d)\n", (int)sp_worker_pid);
+  return true;
+}
+
+void TrackDescriptor::stop_superpoint_worker_nolock() {
+  if (sp_worker_stdin_fd >= 0) {
+    close(sp_worker_stdin_fd);
+    sp_worker_stdin_fd = -1;
+  }
+  if (sp_worker_stdout_fd >= 0) {
+    close(sp_worker_stdout_fd);
+    sp_worker_stdout_fd = -1;
+  }
+  if (sp_worker_pid > 0) {
+    kill(sp_worker_pid, SIGTERM);
+    waitpid(sp_worker_pid, nullptr, 0);
+    sp_worker_pid = -1;
+  }
+  sp_worker_started = false;
+}
+
+void TrackDescriptor::stop_superpoint_worker() {
+  std::lock_guard<std::mutex> lock(sp_worker_mtx);
+  stop_superpoint_worker_nolock();
+}
+
+bool TrackDescriptor::run_superpoint_worker(const cv::Mat &img, std::vector<cv::KeyPoint> &pts_out, cv::Mat &desc_out) {
+  std::lock_guard<std::mutex> lock(sp_worker_mtx);
+
+  if (img.empty()) {
+    return false;
+  }
+  if (!start_superpoint_worker()) {
     return false;
   }
 
-  cv::Mat points_mat;
-  cv::Mat desc_mat;
-  fs["points"] >> points_mat;
-  fs["descriptors"] >> desc_mat;
+  cv::Mat gray = (img.type() == CV_8UC1) ? img : cv::Mat();
+  if (gray.empty()) {
+    img.convertTo(gray, CV_8U);
+  }
+  if (!gray.isContinuous()) {
+    gray = gray.clone();
+  }
+
+  const uint32_t width = static_cast<uint32_t>(gray.cols);
+  const uint32_t height = static_cast<uint32_t>(gray.rows);
+  const size_t image_bytes = static_cast<size_t>(width) * static_cast<size_t>(height);
+  std::array<uint32_t, 2> req_header = {width, height};
+
+  if (!write_all(sp_worker_stdin_fd, reinterpret_cast<const uint8_t *>(req_header.data()), sizeof(req_header)) ||
+      !write_all(sp_worker_stdin_fd, gray.data, image_bytes)) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker write failed\n" RESET);
+    stop_superpoint_worker_nolock();
+    sp_worker_failed = true;
+    return false;
+  }
+
+  std::array<uint32_t, 3> resp_header = {0, 0, 0}; // status, num_points, desc_dim
+  if (!read_all(sp_worker_stdout_fd, reinterpret_cast<uint8_t *>(resp_header.data()), sizeof(resp_header))) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker read header failed\n" RESET);
+    stop_superpoint_worker_nolock();
+    sp_worker_failed = true;
+    return false;
+  }
+
+  const uint32_t status = resp_header[0];
+  const uint32_t num_points = resp_header[1];
+  const uint32_t desc_dim = resp_header[2];
+  if (status != 0) {
+    return false;
+  }
+
+  std::vector<float> points_xy(static_cast<size_t>(num_points) * 2, 0.0f);
+  if (!points_xy.empty() &&
+      !read_all(sp_worker_stdout_fd, reinterpret_cast<uint8_t *>(points_xy.data()), points_xy.size() * sizeof(float))) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker read points failed\n" RESET);
+    stop_superpoint_worker_nolock();
+    sp_worker_failed = true;
+    return false;
+  }
 
   pts_out.clear();
   desc_out.release();
+  pts_out.reserve(num_points);
+  for (uint32_t i = 0; i < num_points; i++) {
+    pts_out.emplace_back(cv::Point2f(points_xy[2 * i], points_xy[2 * i + 1]), 1.0f);
+  }
 
-  if (points_mat.empty() || desc_mat.empty()) {
+  if (num_points == 0 || desc_dim == 0) {
     return true;
   }
 
-  if (points_mat.type() != CV_32FC2) {
-    points_mat.convertTo(points_mat, CV_32FC2);
-  }
-  if (desc_mat.type() != CV_32F) {
-    desc_mat.convertTo(desc_mat, CV_32F);
-  }
-
-  const size_t usable_count = std::min((size_t)points_mat.rows, (size_t)desc_mat.rows);
-  pts_out.reserve(usable_count);
-  for (size_t i = 0; i < usable_count; i++) {
-    const cv::Vec2f pt = points_mat.at<cv::Vec2f>((int)i, 0);
-    pts_out.emplace_back(cv::Point2f(pt[0], pt[1]), 1.0f);
-    desc_out.push_back(desc_mat.row((int)i));
+  desc_out = cv::Mat((int)num_points, (int)desc_dim, CV_32F);
+  const size_t desc_bytes = static_cast<size_t>(num_points) * static_cast<size_t>(desc_dim) * sizeof(float);
+  if (!read_all(sp_worker_stdout_fd, reinterpret_cast<uint8_t *>(desc_out.data), desc_bytes)) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker read descriptors failed\n" RESET);
+    stop_superpoint_worker_nolock();
+    sp_worker_failed = true;
+    return false;
   }
 
   return true;
 }
-
-} // namespace
 
 //NEW Function - chooses camera based on image message
 void TrackDescriptor::feed_new_camera(const CameraData &message) {
@@ -489,39 +600,57 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
   // For all new points, extract their descriptors
   cv::Mat desc0_ext;
   std::vector<cv::KeyPoint> pts0_ext;
-  const bool python_ok = run_superpoint_python(img0, sp_weights_path, sp_threshold, sp_do_nms, sp_use_cuda, pts0_ext, desc0_ext);
+  const bool python_ok = run_superpoint_worker(img0, pts0_ext, desc0_ext);
   if (!python_ok) {
-    PRINT_WARNING(YELLOW "[TRACK-DESC]: python SuperPoint failed, falling back to FAST+ORB\n" RESET);
-    Grider_FAST::perform_griding(img0, cv::Mat(), pts0_ext, num_features, grid_x, grid_y, threshold, true);
-    orb0->compute(img0, pts0_ext, desc0_ext);
+    PRINT_ERROR(RED "[TRACK-DESC]: python SuperPoint worker failed. Fallback is disabled.\n" RESET);
+    std::exit(EXIT_FAILURE);
   }
 
   if (pts0_raw != nullptr)
     *pts0_raw = pts0_ext;
-  
-  // For all good matches, lets append to our returned vectors
-  // NOTE: if we multi-thread this atomic can cause some randomness due to multiple thread detecting features
-  // NOTE: this is due to the fact that we select update features based on feat id
-  // NOTE: thus the order will matter since we try to select oldest (smallest id) to update with
-  // NOTE: not sure how to remove... maybe a better way?
-  size_t usable_count = std::min(pts0_ext.size(), static_cast<size_t>(desc0_ext.rows));
+
+  // For all good matches, append to our returned vectors.
+  // NOTE: if we multi-thread this atomic can cause some randomness due to multiple thread detecting features.
+  // NOTE: this is due to the fact that we select update features based on feat id.
+  // NOTE: thus the order will matter since we try to select oldest (smallest id) to update with.
+  const size_t usable_count = std::min(pts0_ext.size(), static_cast<size_t>(desc0_ext.rows));
+
+  // Optional occupancy-grid enforcement (same idea as original ORB mono path).
+  cv::Mat grid_2d;
+  bool use_grid = sp_enforce_grid && min_px_dist > 0;
+  if (use_grid) {
+    const int grid_w = std::max(1, (int)((float)img0.cols / (float)min_px_dist));
+    const int grid_h = std::max(1, (int)((float)img0.rows / (float)min_px_dist));
+    grid_2d = cv::Mat::zeros(cv::Size(grid_w, grid_h), CV_8UC1);
+  }
+
   for (size_t i = 0; i < usable_count; i++) {
-    //Check that the point is in bounds
     cv::KeyPoint kpt = pts0_ext.at(i);
-    int x = (int)kpt.pt.x;
-    int y = (int)kpt.pt.y;
+    const int x = (int)kpt.pt.x;
+    const int y = (int)kpt.pt.y;
     if (x < 0 || x >= img0.cols || y < 0 || y >= img0.rows) {
       continue;
     }
 
-    //Mask logic used here instead of in SPextractor - maybe should move??
-    if (!mask0.empty() && mask0.at<uint8_t>(y, x) > 127)
+    // Mask logic used here instead of inside the python extractor.
+    if (!mask0.empty() && mask0.at<uint8_t>(y, x) > 127) {
       continue;
+    }
 
-    //Append keypoints and descriptors
-    pts0.push_back(pts0_ext.at(i));
+    if (use_grid) {
+      const int x_grid = (int)(kpt.pt.x / (float)min_px_dist);
+      const int y_grid = (int)(kpt.pt.y / (float)min_px_dist);
+      if (x_grid < 0 || x_grid >= grid_2d.cols || y_grid < 0 || y_grid >= grid_2d.rows) {
+        continue;
+      }
+      if (grid_2d.at<uint8_t>(y_grid, x_grid) > 127) {
+        continue;
+      }
+      grid_2d.at<uint8_t>(y_grid, x_grid) = 255;
+    }
+
+    pts0.push_back(kpt);
     desc0.push_back(desc0_ext.row((int)i));
-    // Set our IDs to be unique IDs here, will later replace with corrected ones, after temporal matching
     size_t temp = ++currid;
     ids0.push_back(temp);
   }

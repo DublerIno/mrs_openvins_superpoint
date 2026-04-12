@@ -9,10 +9,15 @@ export TMUX_SOCKET_NAME=mrs
 
 DEFAULT_BAG="$SCRIPTPATH/outdoor.mcap"
 DEFAULT_CONFIG="$SCRIPTPATH/open_vins/estimator_config.yaml"
+DEFAULT_SUPERPOINT_VENV_PYTHON="$HOME/git/SuperPointPretrainedNetwork/venv/bin/python"
 DEFAULT_SUPERPOINT_PYTHON="python3"
+if [ -x "$DEFAULT_SUPERPOINT_VENV_PYTHON" ]; then
+  DEFAULT_SUPERPOINT_PYTHON="$DEFAULT_SUPERPOINT_VENV_PYTHON"
+fi
 
-export OV_BAG_PATH="${1:-$DEFAULT_BAG}"
-export OV_CONFIG_PATH="${2:-$DEFAULT_CONFIG}"
+# Priority for each variable: explicit argument > pre-set environment variable > default.
+export OV_BAG_PATH="${1:-${OV_BAG_PATH:-$DEFAULT_BAG}}"
+export OV_CONFIG_PATH="${2:-${OV_CONFIG_PATH:-$DEFAULT_CONFIG}}"
 export OV_SUPERPOINT_PYTHON="${3:-${OV_SUPERPOINT_PYTHON:-$DEFAULT_SUPERPOINT_PYTHON}}"
 
 if [ ! -f "$OV_BAG_PATH" ]; then
@@ -24,6 +29,7 @@ if [ ! -f "$OV_CONFIG_PATH" ]; then
 fi
 
 echo "[tmux_tracking] OV_SUPERPOINT_PYTHON=$OV_SUPERPOINT_PYTHON"
+echo "[tmux_tracking] Starting with internal defaults/overrides (no manual ros2 arg passing needed)."
 
 tmuxinator start -p ./session_tracking.yml
 

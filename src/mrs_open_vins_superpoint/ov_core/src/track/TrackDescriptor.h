@@ -23,6 +23,7 @@
 #define OV_CORE_TRACK_DESC_H
 
 #include "TrackBase.h"
+#include <sys/types.h>
 
 namespace ov_core {
 
@@ -85,6 +86,7 @@ public:
       sp_threshold(sp_threshold),
       sp_do_nms(do_nms),
       sp_use_cuda(use_cuda) {}
+  ~TrackDescriptor() override;
 
   /**
    * @brief Process a new image
@@ -209,6 +211,20 @@ protected:
   double sp_threshold;
   bool sp_do_nms;
   bool sp_use_cuda;
+  bool sp_enforce_grid = true;
+
+  // Persistent python worker state
+  bool sp_worker_started = false;
+  bool sp_worker_failed = false;
+  int sp_worker_stdin_fd = -1;
+  int sp_worker_stdout_fd = -1;
+  pid_t sp_worker_pid = -1;
+  std::mutex sp_worker_mtx;
+
+  bool start_superpoint_worker();
+  void stop_superpoint_worker();
+  void stop_superpoint_worker_nolock();
+  bool run_superpoint_worker(const cv::Mat &img, std::vector<cv::KeyPoint> &pts_out, cv::Mat &desc_out);
 
 };
 

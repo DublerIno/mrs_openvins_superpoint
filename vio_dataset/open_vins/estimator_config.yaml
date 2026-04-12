@@ -97,25 +97,26 @@ grid_x: 20 # extraction sub-grid count for horizontal direction (uniform trackin
 grid_y: 20 # extraction sub-grid count for vertical direction (uniform tracking)
 # min_px_dist: 10 # distance between features (features near each other provide less information)
 
-min_px_dist: 1 # distance between features (features near each other provide less information)
-knn_ratio: 0.90 # descriptor knn threshold for the top two descriptor matches
+min_px_dist: -1 # distance between features (features near each other provide less information)
+knn_ratio: 0.9 # descriptor knn threshold for the top two descriptor matches
 track_frequency: 50.0 # frequency we will perform feature tracking at (in frames per second / hertz)
 downsample_cameras: true # will downsample image in half if true
 num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
 histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
 
-#superpoint params
-weights_path: "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/superpoint_v1.pth" # absolute path to SuperPoint .pth weights
-do_nms: true 
+# SuperPoint params (persistent python worker path)
+# [USED] by current implementation:
+weights_path: "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/superpoint_v1.pth" # .pth model path used by python worker
+do_nms: true # used -> maps to NMS distance (true => nms_dist=4, false => 0)
+use_cuda: true # used -> --cuda 1/0 for python worker
+sp_threshold: 0.1 # used -> SuperPoint confidence threshold
 
-use_cuda: true # use CUDA acceleration in SuperPoint Python bridge
-sp_threshold: 0.015 # lower confidence threshold to keep more SuperPoint detections
-#sp extractor
-sp_nfeatures:  400
+# [UNUSED / LEGACY] parsed from yaml but not used in current python-worker SuperPoint path:
+sp_nfeatures: 1500
 sp_scaleFactor: 1.2
-sp_nlevels: 1 #crashuje pri vic, u jedne z implementaci jde
-sp_iniThFAST: 0.065
-sp_minThFAST: 0.05
+sp_nlevels: 1
+sp_iniThFAST: 0.015
+sp_minThFAST: 0.007
  
 
 
