@@ -2,7 +2,7 @@
 
 #ESTIMATOR CONGIF FOR SUPERPOINT DESCRIPTOR
 
-verbosity: "INFO" # ALL, DEBUG, INFO, WARNING, ERROR, SILENT
+verbosity: "DEBUG" # ALL, DEBUG, INFO, WARNING, ERROR, SILENT
 
 use_fej: true # if first-estimate Jacobians should be used (enable for good consistency)
 integration: "rk4" # discrete, rk4, analytical (if rk4 or analytical used then analytical covariance propagation is used)
@@ -91,13 +91,15 @@ use_klt: false # if true we will use KLT, otherwise use a ORB descriptor + robus
 num_pts: 200 # number of points (per camera) we will extract and try to track
 # num_pts: 200 # number of points (per camera) we will extract and try to track
 # fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)
-fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)
+fast_threshold: 10 # threshold for fast extraction (warning: lower threshs can be expensive)
 grid_x: 20 # extraction sub-grid count for horizontal direction (uniform tracking)
 # grid_y: 5 # extraction sub-grid count for vertical direction (uniform tracking)
 grid_y: 20 # extraction sub-grid count for vertical direction (uniform tracking)
 # min_px_dist: 10 # distance between features (features near each other provide less information)
+
 min_px_dist: 20 # distance between features (features near each other provide less information)
-knn_ratio: 0.70 # descriptor knn threshold for the top two descriptor matches
+
+knn_ratio: 0.80 # descriptor knn threshold for the top two descriptor matches
 track_frequency: 50.0 # frequency we will perform feature tracking at (in frames per second / hertz)
 downsample_cameras: true # will downsample image in half if true
 num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
@@ -107,13 +109,13 @@ histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
 weights_path:"/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/track/superpoint_model_weights.bin" #absolute path to cnn weights
 do_nms: true 
 use_cuda: true #true to use cuda graphical accelaration
-sp_threshold:0.50
+sp_threshold: 0.50 #this param should currently not work 
 #sp extractor
-sp_nfeatures:  1000
+sp_nfeatures:  1000 #should not work in this mode - as no quad tree - only grid enforced distribution and nms
 sp_scaleFactor: 5.0
-sp_nlevels: 2
-sp_iniThFAST: 0.4
-sp_minThFAST: 0.01
+sp_nlevels: 5 #should not work in no pyramid mode
+sp_iniThFAST: 0.015
+sp_minThFAST: 0.007
 
 
 
