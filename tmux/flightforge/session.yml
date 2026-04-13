@@ -6,7 +6,7 @@ attach: false
 tmux_options: -f /etc/ctu-mrs/tmux.conf
 # you can modify these
 startup_window: simulator
-pre_window: export UAV_NAME=uav1; export USE_SIM_TIME="true"; export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+pre_window: export UAV_NAME=uav1; export USE_SIM_TIME="true"; export RMW_IMPLEMENTATION=rmw_zenoh_cpp; export OV_CONFIG_PATH="${OV_CONFIG_PATH}"; export OV_SUPERPOINT_PYTHON="${OV_SUPERPOINT_PYTHON}"
 windows:
   - router:
       layout: tiled
@@ -23,7 +23,7 @@ windows:
   - vio:
       layout: tiled
       panes:
-        - ros2 launch mrs_open_vins_core open_vins.launch.py config_path:=./ov_config_flighforge/estimator_config.yaml
+        - echo "OV_CONFIG_PATH=${OV_CONFIG_PATH}"; echo "OV_SUPERPOINT_PYTHON=${OV_SUPERPOINT_PYTHON}"; ${OV_SUPERPOINT_PYTHON} --version || true; ros2 launch mrs_open_vins_core open_vins.launch.py config_path:="${OV_CONFIG_PATH}"
   - vins_republisher:
       layout: tiled
       panes:

@@ -9,6 +9,20 @@ cd "$SCRIPTPATH"
 export TMUX_SESSION_NAME=simulation
 export TMUX_SOCKET_NAME=mrs
 
+DEFAULT_CONFIG="$SCRIPTPATH/ov_config_flighforge/estimator_config.yaml"
+DEFAULT_SUPERPOINT_VENV_PYTHON="$HOME/git/SuperPointPretrainedNetwork/venv/bin/python"
+DEFAULT_SUPERPOINT_PYTHON="python3"
+if [ -x "$DEFAULT_SUPERPOINT_VENV_PYTHON" ]; then
+  DEFAULT_SUPERPOINT_PYTHON="$DEFAULT_SUPERPOINT_VENV_PYTHON"
+fi
+
+# Priority: arg > existing env > default
+export OV_CONFIG_PATH="${1:-${OV_CONFIG_PATH:-$DEFAULT_CONFIG}}"
+export OV_SUPERPOINT_PYTHON="${2:-${OV_SUPERPOINT_PYTHON:-$DEFAULT_SUPERPOINT_PYTHON}}"
+
+echo "[flightforge] OV_CONFIG_PATH=$OV_CONFIG_PATH"
+echo "[flightforge] OV_SUPERPOINT_PYTHON=$OV_SUPERPOINT_PYTHON"
+
 # start tmuxinator
 tmuxinator start -p ./session.yml
 
