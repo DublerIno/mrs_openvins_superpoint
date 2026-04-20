@@ -114,6 +114,7 @@ bool TrackDescriptor::start_superpoint_worker() {
   const std::string conf_str = std::to_string(sp_threshold);
   const std::string nms_str = std::to_string(sp_do_nms ? 4 : 0);
   const std::string cuda_str = std::to_string(sp_use_cuda ? 1 : 0);
+  const std::string nfeatures_str = std::to_string(sp_nfeatures);
 
   pid_t pid = fork();
   if (pid < 0) {
@@ -139,6 +140,7 @@ bool TrackDescriptor::start_superpoint_worker() {
            "--conf_thresh", conf_str.c_str(),
            "--nms_dist", nms_str.c_str(),
            "--cuda", cuda_str.c_str(),
+           "--num_features", nfeatures_str.c_str(),
            (char *)nullptr);
     _exit(127);
   }

@@ -113,10 +113,12 @@ histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
 weights_path: "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/superpoint_v1.pth" # .pth model path used by python worker
 do_nms: true # used -> maps to NMS distance (true => nms_dist=4, false => 0)
 use_cuda: true # used -> --cuda 1/0 for python worker
-sp_threshold: 0.03 # used -> SuperPoint confidence threshold
+sp_threshold: 0.01 # used -> SuperPoint confidence threshold
 
 # [UNUSED / LEGACY] parsed from yaml but not used in current python-worker SuperPoint path:
-sp_nfeatures: 1500
+sp_nfeatures: -1
+
+
 sp_scaleFactor: 1.2
 sp_nlevels: 1
 sp_iniThFAST: 0.015

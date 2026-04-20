@@ -16,6 +16,7 @@ windows:
         - ./republish.sh
         - ./rviz.sh
         - ros2 run rmw_zenoh_cpp rmw_zenohd
+        - ros2 bag record /uav1/open_vins/odomimu /uav1/open_vins/points_slam
 
   - vio:
       layout: tiled

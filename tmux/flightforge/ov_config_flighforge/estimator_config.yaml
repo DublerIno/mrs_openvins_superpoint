@@ -80,7 +80,7 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 
 # our front-end feature tracking parameters
 # we have a KLT and descriptor based (KLT is better implemented...)
-use_klt: false # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+use_klt: true # if true we will use KLT, otherwise use a ORB descriptor + robust matching
 num_pts: 400 # number of points (per camera) we will extract and try to track
 # num_pts: 200 # number of points (per camera) we will extract and try to track
 # fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)
@@ -89,9 +89,11 @@ grid_x: 10 # extraction sub-grid count for horizontal direction (uniform trackin
 # grid_y: 5 # extraction sub-grid count for vertical direction (uniform tracking)
 grid_y: 10 # extraction sub-grid count for vertical direction (uniform tracking)
 # min_px_dist: 10 # distance between features (features near each other provide less information)
-min_px_dist: -1 # disable occupancy-grid minimum-distance enforcement in current SuperPoint path
-knn_ratio: 0.70 # descriptor knn threshold for the top two descriptor matches
-track_frequency: 21.0 # frequency we will perform feature tracking at (in frames per second / hertz)
+
+min_px_dist: 10 # disable occupancy-grid minimum-distance enforcement in current SuperPoint path
+knn_ratio: 0.80 # descriptor knn threshold for the top two descriptor matches
+
+track_frequency: 50.0 # frequency we will perform feature tracking at (in frames per second / hertz)
 downsample_cameras: false # will downsample image in half if true
 num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
 histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
@@ -102,10 +104,10 @@ histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
 weights_path: "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/superpoint_v1.pth" # .pth model path used by python worker
 do_nms: true # used -> maps to NMS distance (true => nms_dist=4, false => 0)
 use_cuda: true # used -> --cuda 1/0 for python worker
-sp_threshold: 0.1 # used -> SuperPoint confidence threshold
+sp_threshold: 0.01 # used -> SuperPoint confidence threshold
 
 # [UNUSED / LEGACY] parsed from yaml but not used in current python-worker SuperPoint path:
-sp_nfeatures: 1500
+sp_nfeatures: -1500
 sp_scaleFactor: 1.2
 sp_nlevels: 1
 sp_iniThFAST: 0.015

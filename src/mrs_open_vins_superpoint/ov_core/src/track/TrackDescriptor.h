@@ -85,7 +85,8 @@ public:
       sp_weights_path(weights_path),
       sp_threshold(sp_threshold),
       sp_do_nms(do_nms),
-      sp_use_cuda(use_cuda) {}
+      sp_use_cuda(use_cuda),
+      sp_nfeatures(sp_nfeatures) {}
   ~TrackDescriptor() override;
 
   /**
@@ -211,6 +212,7 @@ protected:
   double sp_threshold;
   bool sp_do_nms;
   bool sp_use_cuda;
+  int sp_nfeatures;
   bool sp_enforce_grid = true;
 
   // Persistent python worker state

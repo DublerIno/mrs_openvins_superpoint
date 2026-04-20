@@ -26,6 +26,7 @@ echo "[tmux] OV_SUPERPOINT_PYTHON=$OV_SUPERPOINT_PYTHON"
 # start tmuxinator
 tmuxinator start -p ./session.yml
 
+
 # if we are not in tmux
 if [ -z $TMUX ]; then
 

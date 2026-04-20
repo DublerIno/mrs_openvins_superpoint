@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cmath>
 #include <cctype>
+#include <cstdint>
 #include <deque>
 #include <limits>
 #include <sstream>
@@ -78,6 +79,13 @@ double time_start = 0.0;
 int proc_width = 0;
 int proc_height = 0;
 bool enable_dynamic_mask = true;
+bool preprocess_light_enable = false;
+double preprocess_light_alpha = 1.0;
+double preprocess_light_beta = 0.0;
+double preprocess_light_gamma = 1.0;
+double preprocess_light_flicker_amplitude = 0.0;
+int preprocess_light_flicker_period = 0;
+uint64_t preprocess_frame_counter = 0;
 
 // How many cameras we will do visual tracking on (mono=1, stereo=2)
 int max_cameras = 2;
@@ -98,20 +106,47 @@ static inline void preprocess_image(const cv::Mat &src, cv::Mat &dst, double ima
   cv::Mat equalized;
   cv::equalizeHist(src, equalized);
 
+  cv::Mat processed = equalized;
+  if (preprocess_light_enable) {
+    cv::Mat imgf;
+    equalized.convertTo(imgf, CV_32FC1, 1.0 / 255.0);
+
+    double beta = preprocess_light_beta;
+    if (preprocess_light_flicker_period > 0 && std::abs(preprocess_light_flicker_amplitude) > 1e-12) {
+      const double phase = 2.0 * 3.14159265358979323846 *
+                           static_cast<double>(preprocess_frame_counter % static_cast<uint64_t>(preprocess_light_flicker_period)) /
+                           static_cast<double>(preprocess_light_flicker_period);
+      beta += preprocess_light_flicker_amplitude * std::sin(phase);
+    }
+    preprocess_frame_counter++;
+
+    if (std::abs(preprocess_light_alpha - 1.0) > 1e-12 || std::abs(beta) > 1e-12) {
+      imgf = imgf * preprocess_light_alpha + beta;
+    }
+    cv::min(imgf, 1.0, imgf);
+    cv::max(imgf, 0.0, imgf);
+
+    const double gamma = (preprocess_light_gamma > 1e-6) ? preprocess_light_gamma : 1.0;
+    if (std::abs(gamma - 1.0) > 1e-12) {
+      cv::pow(imgf, gamma, imgf);
+    }
+    imgf.convertTo(processed, CV_8UC1, 255.0);
+  }
+
   double effective_scale = image_scale;
   if (effective_scale <= 0.0) {
     effective_scale = 1.0;
   }
-  if (max_width > 0 && equalized.cols > max_width) {
-    const double width_scale = static_cast<double>(max_width) / static_cast<double>(equalized.cols);
+  if (max_width > 0 && processed.cols > max_width) {
+    const double width_scale = static_cast<double>(max_width) / static_cast<double>(processed.cols);
     effective_scale = std::min(effective_scale, width_scale);
   }
 
   if (std::abs(effective_scale - 1.0) < 1e-6) {
-    dst = equalized;
+    dst = processed;
     return;
   }
-  cv::resize(equalized, dst, cv::Size(), effective_scale, effective_scale, cv::INTER_AREA);
+  cv::resize(processed, dst, cv::Size(), effective_scale, effective_scale, cv::INTER_AREA);
 }
 
 static inline bool ends_with_case_insensitive(const std::string &value, const std::string &suffix) {
@@ -242,8 +277,17 @@ int main(int argc, char **argv) {
   parser->parse_config("image_scale", image_scale, false);
   parser->parse_config("max_width", max_width, false);
   parser->parse_config("enable_dynamic_mask", enable_dynamic_mask, false);
+  parser->parse_config("preprocess_light_enable", preprocess_light_enable, false);
+  parser->parse_config("preprocess_light_alpha", preprocess_light_alpha, false);
+  parser->parse_config("preprocess_light_beta", preprocess_light_beta, false);
+  parser->parse_config("preprocess_light_gamma", preprocess_light_gamma, false);
+  parser->parse_config("preprocess_light_flicker_amplitude", preprocess_light_flicker_amplitude, false);
+  parser->parse_config("preprocess_light_flicker_period", preprocess_light_flicker_period, false);
   PRINT_INFO("tracking image scale: %.3f (max_width=%d)\n", image_scale, max_width);
   PRINT_INFO("enable dynamic mask: %d\n", enable_dynamic_mask);
+  PRINT_INFO("preprocess light: enable=%d alpha=%.3f beta=%.3f gamma=%.3f flicker_amp=%.3f flicker_period=%d\n",
+             (int)preprocess_light_enable, preprocess_light_alpha, preprocess_light_beta, preprocess_light_gamma,
+             preprocess_light_flicker_amplitude, preprocess_light_flicker_period);
 
   //===================================================================================
   //===================================================================================
