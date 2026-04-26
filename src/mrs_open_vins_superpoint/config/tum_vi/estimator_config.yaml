@@ -76,6 +76,7 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # our front-end feature tracking parameters
 # we have a KLT and descriptor based (KLT is better implemented...)
 use_klt: true
+descriptor_tracker_type: superpoint # when use_klt=false: superpoint or orb
 num_pts: 200
 fast_threshold: 20
 grid_x: 5

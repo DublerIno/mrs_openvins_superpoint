@@ -86,7 +86,9 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # we have a KLT and descriptor based (KLT is better implemented...)
 
 #FOR superpoint we need false - so TracKDescriptor is used which is overwritten by Superpoissznt
-use_klt: true # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+use_klt: false # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+descriptor_tracker_type: "orb" # "ORB" or "S
+ 
 
 num_pts: 1000 # number of points (per camera) we will extract and try to track
 # num_pts: 200 # number of points (per camera) we will extract and try to track
@@ -109,7 +111,7 @@ histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
 # SuperPoint params (persistent python worker path)
 # [USED] by current implementation:
 weights_path: "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/superpoint_v1.pth" # .pth model path used by python worker
-do_nms: false # maps to NMS distance (true => nms_dist=4, false => 0)
+do_nms: true  # maps to NMS distance (true => nms_dist=4, false => 0)
 use_cuda: true # used -> --cuda 1/0 for python worker
 sp_threshold: 0.01 #  used -> SuperPoint confidence threshold
 sp_nfeatures: -700 # for ANMS, turnoff - 0>n

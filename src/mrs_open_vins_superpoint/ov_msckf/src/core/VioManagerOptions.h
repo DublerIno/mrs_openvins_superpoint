@@ -54,6 +54,7 @@ namespace ov_msckf {
  * You will also need to add it to the print statement at the bottom of each.
  */
 struct VioManagerOptions {
+  enum class DescriptorTrackerType { SUPERPOINT, ORB };
 
   /**
    * @brief This function will load the non-simulation parameters of the system and print.
@@ -399,6 +400,9 @@ struct VioManagerOptions {
   /// If we should use KLT tracking, or descriptor matcher
   bool use_klt = true;
 
+  /// Descriptor frontend backend used when use_klt=false
+  DescriptorTrackerType descriptor_tracker_type = DescriptorTrackerType::SUPERPOINT;
+
   /// If should extract aruco tags and estimate them
   bool use_aruco = true;
 
@@ -491,6 +495,18 @@ struct VioManagerOptions {
       parser->parse_config("sp_nlevels", sp_nlevels);
       parser->parse_config("sp_iniThFAST", sp_iniThFAST);
       parser->parse_config("sp_minThFAST", sp_minThFAST);
+      std::string descriptor_tracker_type_str = "superpoint";
+      parser->parse_config("descriptor_tracker_type", descriptor_tracker_type_str, false);
+      if (descriptor_tracker_type_str == "superpoint" || descriptor_tracker_type_str == "SUPERPOINT") {
+        descriptor_tracker_type = DescriptorTrackerType::SUPERPOINT;
+      } else if (descriptor_tracker_type_str == "orb" || descriptor_tracker_type_str == "ORB") {
+        descriptor_tracker_type = DescriptorTrackerType::ORB;
+      } else {
+        PRINT_ERROR(RED "VioManager(): invalid descriptor tracker specified:\n" RESET);
+        PRINT_ERROR(RED "\t- superpoint\n" RESET);
+        PRINT_ERROR(RED "\t- orb\n" RESET);
+        std::exit(EXIT_FAILURE);
+      }
       std::string histogram_method_str = "HISTOGRAM";
       parser->parse_config("histogram_method", histogram_method_str);
       if (histogram_method_str == "NONE") {
@@ -512,6 +528,8 @@ struct VioManagerOptions {
     PRINT_DEBUG("FEATURE TRACKING PARAMETERS:\n");
     PRINT_DEBUG("  - use_stereo: %d\n", use_stereo);
     PRINT_DEBUG("  - use_klt: %d\n", use_klt);
+    PRINT_DEBUG("  - descriptor tracker type: %s\n",
+                descriptor_tracker_type == DescriptorTrackerType::SUPERPOINT ? "superpoint" : "orb");
     PRINT_DEBUG("  - use_aruco: %d\n", use_aruco);
     PRINT_DEBUG("  - downsize aruco: %d\n", downsize_aruco);
     PRINT_DEBUG("  - downsize cameras: %d\n", downsample_cameras);
