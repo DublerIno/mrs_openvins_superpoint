@@ -125,7 +125,8 @@ protected:
    * See robust_match() for the matching.
    */
   void perform_detection_monocular(const cv::Mat &img0, const cv::Mat &mask0, std::vector<cv::KeyPoint> &pts0, cv::Mat &desc0,
-                                   std::vector<size_t> &ids0, std::vector<cv::KeyPoint> *pts0_raw = nullptr);
+                                   std::vector<size_t> &ids0, std::vector<cv::KeyPoint> *pts0_raw = nullptr,
+                                   std::vector<float> *scores0 = nullptr);
 
   /**
    * @brief Detects new features in the current stereo pair
@@ -167,7 +168,9 @@ protected:
    * https://github.com/opencv/opencv/blob/master/samples/cpp/tutorial_code/calib3d/real_time_pose_estimation/src/RobustMatcher.cpp
    */
   void robust_match(const std::vector<cv::KeyPoint> &pts0, const std::vector<cv::KeyPoint> &pts1, const cv::Mat &desc0,
-                    const cv::Mat &desc1, size_t id0, size_t id1, std::vector<cv::DMatch> &matches);
+                    const cv::Mat &desc1, size_t id0, size_t id1, std::vector<cv::DMatch> &matches,
+                    const cv::Mat *img0 = nullptr, const cv::Mat *img1 = nullptr,
+                    const std::vector<float> *scores0 = nullptr, const std::vector<float> *scores1 = nullptr);
 
   // Helper functions for the robust_match function
   // Original code is from the "RobustMatcher" in the opencv examples
@@ -206,6 +209,7 @@ protected:
 
   // Descriptor matrices
   std::unordered_map<size_t, cv::Mat> desc_last;
+  std::unordered_map<size_t, std::vector<float>> scores_last;
 
   // Python SuperPoint bridge parameters (used by mono detection)
   std::string sp_weights_path;
@@ -226,7 +230,11 @@ protected:
   bool start_superpoint_worker();
   void stop_superpoint_worker();
   void stop_superpoint_worker_nolock();
-  bool run_superpoint_worker(const cv::Mat &img, std::vector<cv::KeyPoint> &pts_out, cv::Mat &desc_out);
+  bool run_superpoint_worker(const cv::Mat &img, std::vector<cv::KeyPoint> &pts_out, cv::Mat &desc_out, std::vector<float> &scores_out);
+  bool run_superglue_worker(const cv::Mat &img0, const cv::Mat &img1, const std::vector<cv::KeyPoint> &pts0,
+                            const std::vector<cv::KeyPoint> &pts1, const cv::Mat &desc0, const cv::Mat &desc1,
+                            const std::vector<float> &scores0, const std::vector<float> &scores1, std::vector<int> &matches0,
+                            std::vector<float> &matching_scores0);
 
 };
 

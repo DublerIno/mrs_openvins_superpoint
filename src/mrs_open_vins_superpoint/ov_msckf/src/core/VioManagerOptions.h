@@ -166,6 +166,7 @@ struct VioManagerOptions {
     if (parser != nullptr) {
       parser->parse_config("up_msckf_sigma_px", msckf_options.sigma_pix);
       parser->parse_config("up_msckf_chi2_multipler", msckf_options.chi2_multipler);
+      parser->parse_config("up_msckf_min_num_meas", msckf_options.min_num_meas, false);
       parser->parse_config("up_slam_sigma_px", slam_options.sigma_pix);
       parser->parse_config("up_slam_chi2_multipler", slam_options.chi2_multipler);
       parser->parse_config("up_aruco_sigma_px", aruco_options.sigma_pix);

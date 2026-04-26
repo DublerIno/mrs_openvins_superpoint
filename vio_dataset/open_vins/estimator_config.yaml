@@ -1,6 +1,6 @@
 %YAML:1.0 # need to specify the file type at the top!
 
-#ESTIMATOR CONGIF FOR SUPERPOINT DESCRIPTOR
+# ESTIMATOR CONFIG FOR ORB TESTING
 
 verbosity: "ALL" # ALL, DEBUG, INFO, WARNING, ERROR, SILENT
 
@@ -85,27 +85,22 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # our front-end feature tracking parameters
 # we have a KLT and descriptor based (KLT is better implemented...)
 
-#FOR superpoint we need false - so TracKDescriptor is used which is overwritten by Superpoissznt
-use_klt: false # if true we will use KLT, otherwise use a ORB descriptor + robust matching
-descriptor_tracker_type: "orb" # "ORB" or "S
+# ORB descriptor tracking setup
+use_klt: false # false => descriptor tracker path
+descriptor_tracker_type: "orb" # when use_klt=false: "orb" or "superpoint"
  
 
-num_pts: 1000 # number of points (per camera) we will extract and try to track
-# num_pts: 200 # number of points (per camera) we will extract and try to track
-# fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)
-fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)
-grid_x: 20 # extraction sub-grid count for horizontal direction (uniform tracking)
-# grid_y: 5 # extraction sub-grid count for vertical direction (uniform tracking)
-grid_y: 20 # extraction sub-grid count for vertical direction (uniform tracking)
-# min_px_dist: 10 # distance between features (features near each other provide less information)
-
-min_px_dist: 10 # distance between features (features near each other provide less information)
-knn_ratio: 0.75 # descriptor knn threshold for the top two descriptor matches
+num_pts: 1200 # number of points (per camera) we will extract and try to track
+fast_threshold: 15 # lower threshold helps keep enough corners in low-texture frames
+grid_x: 10 # extraction sub-grid count for horizontal direction (uniform tracking)
+grid_y: 8 # extraction sub-grid count for vertical direction (uniform tracking)
+min_px_dist: 8 # distance between features (features near each other provide less information)
+knn_ratio: 0.70 # stricter descriptor knn threshold
 
 track_frequency: 50.0 # frequency we will perform feature tracking at (in frames per second / hertz)
-downsample_cameras: true # will downsample image in half if true
+downsample_cameras: false # keep full resolution for stronger ORB matching
 num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
-histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
+histogram_method: "CLAHE" # NONE, HISTOGRAM, CLAHE
 
 
 # SuperPoint params (persistent python worker path)
@@ -113,7 +108,7 @@ histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
 weights_path: "/home/sponer/ws_openvins_superpoint/src/mrs_open_vins_superpoint/ov_core/src/superpoint_v1.pth" # .pth model path used by python worker
 do_nms: true  # maps to NMS distance (true => nms_dist=4, false => 0)
 use_cuda: true # used -> --cuda 1/0 for python worker
-sp_threshold: 0.01 #  used -> SuperPoint confidence threshold
+sp_threshold: 0.9 #  used -> SuperPoint confidence threshold
 sp_nfeatures: -700 # for ANMS, turnoff - 0>n
 
 
@@ -142,6 +137,7 @@ downsize_aruco: true
 # camera noises and chi-squared threshold multipliers
 up_msckf_sigma_px: 1.5
 up_msckf_chi2_multipler: 1.5
+up_msckf_min_num_meas: 3 # minimum measurements a feature must have to be considered in MSCKF update
 up_slam_sigma_px: 1.5
 up_slam_chi2_multipler: 1.5
 up_aruco_sigma_px: 1

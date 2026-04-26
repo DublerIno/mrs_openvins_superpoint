@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 #include <array>
 #include <fstream>
 #include <limits>
@@ -67,6 +68,14 @@ bool read_all(int fd, uint8_t *data, size_t size) {
     read_total += static_cast<size_t>(ret);
   }
   return true;
+}
+
+bool env_var_true(const char *v) {
+  if (v == nullptr) {
+    return false;
+  }
+  return std::strcmp(v, "1") == 0 || std::strcmp(v, "true") == 0 || std::strcmp(v, "TRUE") == 0 ||
+         std::strcmp(v, "yes") == 0 || std::strcmp(v, "YES") == 0 || std::strcmp(v, "on") == 0 || std::strcmp(v, "ON") == 0;
 }
 
 } // namespace
@@ -115,6 +124,12 @@ bool TrackDescriptor::start_superpoint_worker() {
   const std::string nms_str = std::to_string(sp_do_nms ? 4 : 0);
   const std::string cuda_str = std::to_string(sp_use_cuda ? 1 : 0);
   const std::string nfeatures_str = std::to_string(sp_nfeatures);
+  const char *sg_weights_env = std::getenv("OV_SUPERGLUE_WEIGHTS");
+  const char *sg_match_env = std::getenv("OV_SUPERGLUE_MATCH_THRESHOLD");
+  const char *sg_sinkhorn_env = std::getenv("OV_SUPERGLUE_SINKHORN_ITERATIONS");
+  const std::string sg_weights = (sg_weights_env != nullptr && sg_weights_env[0] != '\0') ? std::string(sg_weights_env) : std::string("outdoor");
+  const std::string sg_match = (sg_match_env != nullptr && sg_match_env[0] != '\0') ? std::string(sg_match_env) : std::string("0.2");
+  const std::string sg_sinkhorn = (sg_sinkhorn_env != nullptr && sg_sinkhorn_env[0] != '\0') ? std::string(sg_sinkhorn_env) : std::string("20");
 
   pid_t pid = fork();
   if (pid < 0) {
@@ -141,6 +156,9 @@ bool TrackDescriptor::start_superpoint_worker() {
            "--nms_dist", nms_str.c_str(),
            "--cuda", cuda_str.c_str(),
            "--num_features", nfeatures_str.c_str(),
+           "--superglue", sg_weights.c_str(),
+           "--sinkhorn_iterations", sg_sinkhorn.c_str(),
+           "--match_threshold", sg_match.c_str(),
            (char *)nullptr);
     _exit(127);
   }
@@ -177,7 +195,8 @@ void TrackDescriptor::stop_superpoint_worker() {
   stop_superpoint_worker_nolock();
 }
 
-bool TrackDescriptor::run_superpoint_worker(const cv::Mat &img, std::vector<cv::KeyPoint> &pts_out, cv::Mat &desc_out) {
+bool TrackDescriptor::run_superpoint_worker(const cv::Mat &img, std::vector<cv::KeyPoint> &pts_out, cv::Mat &desc_out,
+                                            std::vector<float> &scores_out) {
   std::lock_guard<std::mutex> lock(sp_worker_mtx);
 
   if (img.empty()) {
@@ -198,7 +217,7 @@ bool TrackDescriptor::run_superpoint_worker(const cv::Mat &img, std::vector<cv::
   const uint32_t width = static_cast<uint32_t>(gray.cols);
   const uint32_t height = static_cast<uint32_t>(gray.rows);
   const size_t image_bytes = static_cast<size_t>(width) * static_cast<size_t>(height);
-  std::array<uint32_t, 2> req_header = {width, height};
+  std::array<uint32_t, 3> req_header = {0u, width, height};
 
   if (!write_all(sp_worker_stdin_fd, reinterpret_cast<const uint8_t *>(req_header.data()), sizeof(req_header)) ||
       !write_all(sp_worker_stdin_fd, gray.data, image_bytes)) {
@@ -234,23 +253,165 @@ bool TrackDescriptor::run_superpoint_worker(const cv::Mat &img, std::vector<cv::
 
   pts_out.clear();
   desc_out.release();
+  scores_out.clear();
   pts_out.reserve(num_points);
+  scores_out.reserve(num_points);
   for (uint32_t i = 0; i < num_points; i++) {
     pts_out.emplace_back(cv::Point2f(points_xy[2 * i], points_xy[2 * i + 1]), 1.0f);
   }
 
-  if (num_points == 0 || desc_dim == 0) {
+  if (num_points == 0) {
     return true;
   }
 
-  desc_out = cv::Mat((int)num_points, (int)desc_dim, CV_32F);
-  const size_t desc_bytes = static_cast<size_t>(num_points) * static_cast<size_t>(desc_dim) * sizeof(float);
-  if (!read_all(sp_worker_stdout_fd, reinterpret_cast<uint8_t *>(desc_out.data), desc_bytes)) {
-    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker read descriptors failed\n" RESET);
+  if (desc_dim > 0) {
+    desc_out = cv::Mat((int)num_points, (int)desc_dim, CV_32F);
+    const size_t desc_bytes = static_cast<size_t>(num_points) * static_cast<size_t>(desc_dim) * sizeof(float);
+    if (!read_all(sp_worker_stdout_fd, reinterpret_cast<uint8_t *>(desc_out.data), desc_bytes)) {
+      PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker read descriptors failed\n" RESET);
+      stop_superpoint_worker_nolock();
+      sp_worker_failed = true;
+      return false;
+    }
+  }
+
+  scores_out.assign(static_cast<size_t>(num_points), 1.0f);
+  if (num_points > 0 &&
+      !read_all(sp_worker_stdout_fd, reinterpret_cast<uint8_t *>(scores_out.data()), static_cast<size_t>(num_points) * sizeof(float))) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker read scores failed\n" RESET);
     stop_superpoint_worker_nolock();
     sp_worker_failed = true;
     return false;
   }
+
+  return true;
+}
+
+bool TrackDescriptor::run_superglue_worker(const cv::Mat &img0, const cv::Mat &img1, const std::vector<cv::KeyPoint> &pts0,
+                                           const std::vector<cv::KeyPoint> &pts1, const cv::Mat &desc0, const cv::Mat &desc1,
+                                           const std::vector<float> &scores0, const std::vector<float> &scores1,
+                                           std::vector<int> &matches0, std::vector<float> &matching_scores0) {
+  std::lock_guard<std::mutex> lock(sp_worker_mtx);
+
+  if (img0.empty() || img1.empty()) {
+    return false;
+  }
+  if (!start_superpoint_worker()) {
+    return false;
+  }
+  if (desc0.type() != CV_32F || desc1.type() != CV_32F) {
+    return false;
+  }
+  if (desc0.rows != (int)pts0.size() || desc1.rows != (int)pts1.size()) {
+    return false;
+  }
+  if (desc0.cols != desc1.cols) {
+    return false;
+  }
+
+  cv::Mat gray0 = (img0.type() == CV_8UC1) ? img0 : cv::Mat();
+  if (gray0.empty()) {
+    img0.convertTo(gray0, CV_8U);
+  }
+  cv::Mat gray1 = (img1.type() == CV_8UC1) ? img1 : cv::Mat();
+  if (gray1.empty()) {
+    img1.convertTo(gray1, CV_8U);
+  }
+  if (!gray0.isContinuous()) {
+    gray0 = gray0.clone();
+  }
+  if (!gray1.isContinuous()) {
+    gray1 = gray1.clone();
+  }
+
+  const uint32_t w0 = static_cast<uint32_t>(gray0.cols);
+  const uint32_t h0 = static_cast<uint32_t>(gray0.rows);
+  const uint32_t w1 = static_cast<uint32_t>(gray1.cols);
+  const uint32_t h1 = static_cast<uint32_t>(gray1.rows);
+  const uint32_t n0 = static_cast<uint32_t>(pts0.size());
+  const uint32_t n1 = static_cast<uint32_t>(pts1.size());
+  const uint32_t d = static_cast<uint32_t>(desc0.cols);
+
+  std::vector<float> pts0_xy(static_cast<size_t>(n0) * 2, 0.0f);
+  std::vector<float> pts1_xy(static_cast<size_t>(n1) * 2, 0.0f);
+  for (uint32_t i = 0; i < n0; i++) {
+    pts0_xy[2 * i] = pts0[i].pt.x;
+    pts0_xy[2 * i + 1] = pts0[i].pt.y;
+  }
+  for (uint32_t i = 0; i < n1; i++) {
+    pts1_xy[2 * i] = pts1[i].pt.x;
+    pts1_xy[2 * i + 1] = pts1[i].pt.y;
+  }
+
+  std::vector<float> s0 = scores0;
+  std::vector<float> s1 = scores1;
+  if (s0.size() != (size_t)n0) {
+    s0.assign((size_t)n0, 1.0f);
+  }
+  if (s1.size() != (size_t)n1) {
+    s1.assign((size_t)n1, 1.0f);
+  }
+
+  std::array<uint32_t, 8> req_header = {1u, w0, h0, w1, h1, n0, n1, d};
+  if (!write_all(sp_worker_stdin_fd, reinterpret_cast<const uint8_t *>(req_header.data()), sizeof(req_header)) ||
+      !write_all(sp_worker_stdin_fd, gray0.data, static_cast<size_t>(w0) * static_cast<size_t>(h0)) ||
+      !write_all(sp_worker_stdin_fd, gray1.data, static_cast<size_t>(w1) * static_cast<size_t>(h1))) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker write for SuperGlue failed\n" RESET);
+    stop_superpoint_worker_nolock();
+    sp_worker_failed = true;
+    return false;
+  }
+
+  if ((!pts0_xy.empty() &&
+       !write_all(sp_worker_stdin_fd, reinterpret_cast<const uint8_t *>(pts0_xy.data()), pts0_xy.size() * sizeof(float))) ||
+      (!pts1_xy.empty() &&
+       !write_all(sp_worker_stdin_fd, reinterpret_cast<const uint8_t *>(pts1_xy.data()), pts1_xy.size() * sizeof(float))) ||
+      (!s0.empty() && !write_all(sp_worker_stdin_fd, reinterpret_cast<const uint8_t *>(s0.data()), s0.size() * sizeof(float))) ||
+      (!s1.empty() && !write_all(sp_worker_stdin_fd, reinterpret_cast<const uint8_t *>(s1.data()), s1.size() * sizeof(float)))) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker write keypoints/scores for SuperGlue failed\n" RESET);
+    stop_superpoint_worker_nolock();
+    sp_worker_failed = true;
+    return false;
+  }
+
+  const size_t desc0_bytes = static_cast<size_t>(desc0.rows) * static_cast<size_t>(desc0.cols) * sizeof(float);
+  const size_t desc1_bytes = static_cast<size_t>(desc1.rows) * static_cast<size_t>(desc1.cols) * sizeof(float);
+  if ((desc0_bytes > 0 && !write_all(sp_worker_stdin_fd, reinterpret_cast<const uint8_t *>(desc0.data), desc0_bytes)) ||
+      (desc1_bytes > 0 && !write_all(sp_worker_stdin_fd, reinterpret_cast<const uint8_t *>(desc1.data), desc1_bytes))) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker write descriptors for SuperGlue failed\n" RESET);
+    stop_superpoint_worker_nolock();
+    sp_worker_failed = true;
+    return false;
+  }
+
+  std::array<uint32_t, 2> resp_header = {0, 0}; // status, num_points
+  if (!read_all(sp_worker_stdout_fd, reinterpret_cast<uint8_t *>(resp_header.data()), sizeof(resp_header))) {
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker read SuperGlue header failed\n" RESET);
+    stop_superpoint_worker_nolock();
+    sp_worker_failed = true;
+    return false;
+  }
+  if (resp_header[0] != 0) {
+    return false;
+  }
+  const uint32_t out_n0 = resp_header[1];
+  if (out_n0 != n0) {
+    return false;
+  }
+
+  std::vector<int32_t> matches0_i32((size_t)out_n0, -1);
+  matching_scores0.assign((size_t)out_n0, 0.0f);
+  if (out_n0 > 0) {
+    if (!read_all(sp_worker_stdout_fd, reinterpret_cast<uint8_t *>(matches0_i32.data()), static_cast<size_t>(out_n0) * sizeof(int32_t)) ||
+        !read_all(sp_worker_stdout_fd, reinterpret_cast<uint8_t *>(matching_scores0.data()),
+                  static_cast<size_t>(out_n0) * sizeof(float))) {
+      PRINT_WARNING(YELLOW "[TRACK-DESC]: python worker read SuperGlue matches failed\n" RESET);
+      stop_superpoint_worker_nolock();
+      sp_worker_failed = true;
+      return false;
+    }
+  }
+  matches0.assign(matches0_i32.begin(), matches0_i32.end());
 
   return true;
 }
@@ -313,9 +474,10 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   if (pts_last.find(cam_id) == pts_last.end() || pts_last[cam_id].empty()) {
     std::vector<cv::KeyPoint> good_left;
     std::vector<cv::KeyPoint> raw_left;
+    std::vector<float> scores_left;
     std::vector<size_t> good_ids_left;
     cv::Mat good_desc_left;
-    perform_detection_monocular(img, mask, good_left, good_desc_left, good_ids_left, &raw_left);
+    perform_detection_monocular(img, mask, good_left, good_desc_left, good_ids_left, &raw_left, &scores_left);
     std::lock_guard<std::mutex> lckv(mtx_last_vars);
     img_last[cam_id] = img;
     img_mask_last[cam_id] = mask;
@@ -323,6 +485,7 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
     pts_last_raw[cam_id] = raw_left; //for raw visualtization
     ids_last[cam_id] = good_ids_left;
     desc_last[cam_id] = good_desc_left;
+    scores_last[cam_id] = scores_left;
     PRINT_DEBUG("Initialized first frame for cam_id %zu with %zu features\n", cam_id, good_left.size());
     return;
   }
@@ -330,11 +493,12 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   // Our new keypoints and descriptor for the new image
   std::vector<cv::KeyPoint> pts_new;
   std::vector<cv::KeyPoint> pts_new_raw; //for raw visualtization
+  std::vector<float> scores_new;
   cv::Mat desc_new;
   std::vector<size_t> ids_new;
 
   // First, extract new descriptors for this new image
-  perform_detection_monocular(img, mask, pts_new, desc_new, ids_new, &pts_new_raw);
+  perform_detection_monocular(img, mask, pts_new, desc_new, ids_new, &pts_new_raw, &scores_new);
 
   //before perform_detection_monocular(img, pts_new, desc_new, ids_new);
 
@@ -346,7 +510,8 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   std::vector<cv::DMatch> matches_ll;
 
   // Lets match temporally
-  robust_match(pts_last[cam_id], pts_new, desc_last[cam_id], desc_new, cam_id, cam_id, matches_ll);
+  robust_match(pts_last[cam_id], pts_new, desc_last[cam_id], desc_new, cam_id, cam_id, matches_ll, &img_last[cam_id], &img,
+               &scores_last[cam_id], &scores_new);
   rT3 = boost::posix_time::microsec_clock::local_time();
 
   // Get our "good tracks"
@@ -404,6 +569,7 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
     pts_last_raw[cam_id] = pts_new_raw;
     ids_last[cam_id] = good_ids_left;
     desc_last[cam_id] = good_desc_left;
+    scores_last[cam_id] = scores_new;
   }
   rT5 = boost::posix_time::microsec_clock::local_time();
 
@@ -593,16 +759,21 @@ void TrackDescriptor::feed_stereo(const CameraData &message, size_t msg_id_left,
 
 //===================Superpoint implementation===================
 void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv::Mat &mask0, std::vector<cv::KeyPoint> &pts0,
-                                                  cv::Mat &desc0, std::vector<size_t> &ids0, std::vector<cv::KeyPoint> *pts0_raw) {
+                                                  cv::Mat &desc0, std::vector<size_t> &ids0, std::vector<cv::KeyPoint> *pts0_raw,
+                                                  std::vector<float> *scores0) {
 
   // Assert that we need features
   assert(pts0.empty());
+  if (scores0 != nullptr) {
+    scores0->clear();
+  }
   //SUPERPOINT = GET both keypoints and descriptors
   
   // For all new points, extract their descriptors
   cv::Mat desc0_ext;
   std::vector<cv::KeyPoint> pts0_ext;
-  const bool python_ok = run_superpoint_worker(img0, pts0_ext, desc0_ext);
+  std::vector<float> scores0_ext;
+  const bool python_ok = run_superpoint_worker(img0, pts0_ext, desc0_ext, scores0_ext);
   if (!python_ok) {
     PRINT_ERROR(RED "[TRACK-DESC]: python SuperPoint worker failed. Fallback is disabled.\n" RESET);
     std::exit(EXIT_FAILURE);
@@ -653,6 +824,10 @@ void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv:
 
     pts0.push_back(kpt);
     desc0.push_back(desc0_ext.row((int)i));
+    if (scores0 != nullptr) {
+      const float score = (i < scores0_ext.size()) ? scores0_ext[i] : 1.0f;
+      scores0->push_back(score);
+    }
     size_t temp = ++currid;
     ids0.push_back(temp);
   }
@@ -738,7 +913,9 @@ void TrackDescriptor::perform_detection_stereo(const cv::Mat &img0, const cv::Ma
 
 // will it work with superpoimnt descriptors?
 void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const std::vector<cv::KeyPoint> &pts1, const cv::Mat &desc0,
-                                   const cv::Mat &desc1, size_t id0, size_t id1, std::vector<cv::DMatch> &matches) {
+                                   const cv::Mat &desc1, size_t id0, size_t id1, std::vector<cv::DMatch> &matches,
+                                   const cv::Mat *img0, const cv::Mat *img1, const std::vector<float> *scores0,
+                                   const std::vector<float> *scores1) {
 
   if (pts0.empty() || pts1.empty() || desc0.empty() || desc1.empty()) {
     PRINT_ALL("robust match error\n");
@@ -748,6 +925,77 @@ void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const 
   if (desc0.rows != (int)pts0.size() || desc1.rows != (int)pts1.size()) {
     PRINT_ALL("robust match error\n");
     return;
+  }
+
+  if (img0 != nullptr && img1 != nullptr && !img0->empty() && !img1->empty() && desc0.type() == CV_32F && desc1.type() == CV_32F) {
+    const char *sg_enable_env = std::getenv("OV_SUPERGLUE_ENABLE");
+    const bool superglue_enabled = (sg_enable_env == nullptr) ? true : env_var_true(sg_enable_env);
+    if (!superglue_enabled) {
+      // SuperGlue disabled explicitly by environment variable, use legacy KNN matcher path.
+    } else {
+    std::vector<int> sg_matches0;
+    std::vector<float> sg_scores0;
+    std::vector<float> default_scores0(pts0.size(), 1.0f);
+    std::vector<float> default_scores1(pts1.size(), 1.0f);
+    const std::vector<float> &in_scores0 = (scores0 != nullptr) ? *scores0 : default_scores0;
+    const std::vector<float> &in_scores1 = (scores1 != nullptr) ? *scores1 : default_scores1;
+
+    if (run_superglue_worker(*img0, *img1, pts0, pts1, desc0, desc1, in_scores0, in_scores1, sg_matches0, sg_scores0)) {
+      std::vector<cv::DMatch> matches_good;
+      matches_good.reserve(sg_matches0.size());
+      for (size_t i = 0; i < sg_matches0.size(); i++) {
+        const int midx = sg_matches0[i];
+        if (midx < 0 || midx >= (int)pts1.size()) {
+          continue;
+        }
+        const float dist = (i < sg_scores0.size()) ? (1.0f - sg_scores0[i]) : 0.0f;
+        matches_good.emplace_back(cv::DMatch((int)i, midx, dist));
+      }
+
+      std::vector<cv::Point2f> pts0_rsc, pts1_rsc;
+      pts0_rsc.reserve(matches_good.size());
+      pts1_rsc.reserve(matches_good.size());
+      for (size_t i = 0; i < matches_good.size(); i++) {
+        const int index_pt0 = matches_good.at(i).queryIdx;
+        const int index_pt1 = matches_good.at(i).trainIdx;
+        pts0_rsc.push_back(pts0[index_pt0].pt);
+        pts1_rsc.push_back(pts1[index_pt1].pt);
+      }
+
+      if (pts0_rsc.size() < 10) {
+        PRINT_ALL("not enough points for ransac, only %zu matches\n", pts0_rsc.size());
+        return;
+      }
+
+      std::vector<cv::Point2f> pts0_n, pts1_n;
+      pts0_n.reserve(pts0_rsc.size());
+      pts1_n.reserve(pts1_rsc.size());
+      for (size_t i = 0; i < pts0_rsc.size(); i++) {
+        pts0_n.push_back(camera_calib.at(id0)->undistort_cv(pts0_rsc.at(i)));
+        pts1_n.push_back(camera_calib.at(id1)->undistort_cv(pts1_rsc.at(i)));
+      }
+
+      std::vector<uchar> mask_rsc;
+      double max_focallength_img0 = std::max(camera_calib.at(id0)->get_K()(0, 0), camera_calib.at(id0)->get_K()(1, 1));
+      double max_focallength_img1 = std::max(camera_calib.at(id1)->get_K()(0, 0), camera_calib.at(id1)->get_K()(1, 1));
+      double max_focallength = std::max(max_focallength_img0, max_focallength_img1);
+      cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 1 / max_focallength, 0.999, mask_rsc);
+
+      if (mask_rsc.size() != matches_good.size()) {
+        PRINT_ALL("RANSAC mask size does not match matches size, something went wrong\n");
+        return;
+      }
+
+      for (size_t i = 0; i < matches_good.size(); i++) {
+        if (mask_rsc[i] != 1) {
+          continue;
+        }
+        matches.push_back(matches_good.at(i));
+      }
+      return;
+    }
+    PRINT_WARNING(YELLOW "[TRACK-DESC]: SuperGlue worker failed, falling back to descriptor KNN matching.\n" RESET);
+    }
   }
 
   // Our 1to2 and 2to1 match vectors

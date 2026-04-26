@@ -25,6 +25,8 @@
 #include <cctype>
 #include <cstdint>
 #include <deque>
+#include <fstream>
+#include <iomanip>
 #include <limits>
 #include <sstream>
 #include <unistd.h>
@@ -59,6 +61,7 @@
 #include "track/TrackAruco.h"
 #include "track/TrackDescriptor.h"
 #include "track/TrackKLT.h"
+#include "track/TrackORB.h"
 #include "utils/opencv_yaml_parse.h"
 #include "utils/print.h"
 
@@ -89,6 +92,26 @@ uint64_t preprocess_frame_counter = 0;
 
 // How many cameras we will do visual tracking on (mono=1, stereo=2)
 int max_cameras = 2;
+
+// Basic tracking logger (file output)
+bool tracking_log_enable = true;
+std::string tracking_log_path = "test_tracking_stats.log";
+int tracking_log_avg_frames = 20;
+std::ofstream tracking_log_stream;
+int tracking_log_frame_count = 0;
+double tracking_log_time_start = 0.0;
+double tracking_log_sum_track_feat = 0.0;
+double tracking_log_sum_numtracks = 0.0;
+double tracking_log_sum_lost_feats = 0.0;
+double tracking_log_sum_marg_feats = 0.0;
+double tracking_log_sum_lost_track_measurements = 0.0;
+
+static inline void tracking_log_write(const std::string &line) {
+  if (!tracking_log_enable || !tracking_log_stream.is_open()) {
+    return;
+  }
+  tracking_log_stream << line << std::endl;
+}
 
 static inline double wall_clock_seconds() {
   const auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -283,11 +306,15 @@ int main(int argc, char **argv) {
   parser->parse_config("preprocess_light_gamma", preprocess_light_gamma, false);
   parser->parse_config("preprocess_light_flicker_amplitude", preprocess_light_flicker_amplitude, false);
   parser->parse_config("preprocess_light_flicker_period", preprocess_light_flicker_period, false);
+  parser->parse_config("tracking_log_enable", tracking_log_enable, false);
+  parser->parse_config("tracking_log_path", tracking_log_path, false);
+  parser->parse_config("tracking_log_avg_frames", tracking_log_avg_frames, false);
   PRINT_INFO("tracking image scale: %.3f (max_width=%d)\n", image_scale, max_width);
   PRINT_INFO("enable dynamic mask: %d\n", enable_dynamic_mask);
   PRINT_INFO("preprocess light: enable=%d alpha=%.3f beta=%.3f gamma=%.3f flicker_amp=%.3f flicker_period=%d\n",
              (int)preprocess_light_enable, preprocess_light_alpha, preprocess_light_beta, preprocess_light_gamma,
              preprocess_light_flicker_amplitude, preprocess_light_flicker_period);
+  PRINT_INFO("tracking log: enable=%d path=%s avg_frames=%d\n", (int)tracking_log_enable, tracking_log_path.c_str(), tracking_log_avg_frames);
 
   //===================================================================================
   //===================================================================================
@@ -390,6 +417,8 @@ int main(int argc, char **argv) {
 
   if (tracker_type_upper == "KLT") {
     extractor = new TrackKLT(cameras, num_pts, num_aruco, use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist);
+  } else if (tracker_type_upper == "ORB" || tracker_type_upper == "TRACKORB") {
+    extractor = new TrackORB(cameras, num_pts, num_aruco, use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist, knn_ratio);
   } else if (tracker_type_upper == "DESCRIPTOR" || tracker_type_upper == "TRACKDESCRIPTOR") {
     extractor = new TrackDescriptor(cameras, num_pts, num_aruco, use_stereo, method, fast_threshold, grid_x, grid_y, min_px_dist,
                                     knn_ratio, sp_weights_path, sp_threshold, sp_do_nms, sp_use_cuda, sp_nfeatures, sp_scaleFactor,
@@ -399,9 +428,49 @@ int main(int argc, char **argv) {
   } else {
     PRINT_ERROR(RED "invalid tracker_type specified: %s\n" RESET, tracker_type.c_str());
     PRINT_ERROR(RED "\t- KLT\n" RESET);
+    PRINT_ERROR(RED "\t- ORB\n" RESET);
     PRINT_ERROR(RED "\t- DESCRIPTOR\n" RESET);
     PRINT_ERROR(RED "\t- ARUCO\n" RESET);
     std::exit(EXIT_FAILURE);
+  }
+
+  if (tracking_log_avg_frames < 1) {
+    tracking_log_avg_frames = 1;
+  }
+  if (tracking_log_enable) {
+    tracking_log_stream.open(tracking_log_path, std::ofstream::out | std::ofstream::trunc);
+    if (!tracking_log_stream.is_open()) {
+      PRINT_WARNING(YELLOW "failed to open tracking log file: %s\n" RESET, tracking_log_path.c_str());
+      tracking_log_enable = false;
+    } else {
+      tracking_log_stream << std::fixed << std::setprecision(6);
+      tracking_log_write("# test_tracking basic log");
+      tracking_log_write("# parsed_params");
+      tracking_log_write("config_path=" + config_path);
+      tracking_log_write("bag_path=" + path_to_bag);
+      tracking_log_write("bag_storage_id=" + bag_storage_id);
+      tracking_log_write("topic_camera0=" + topic_camera0);
+      tracking_log_write("topic_camera1=" + topic_camera1);
+      tracking_log_write("tracker_type_raw=" + tracker_type);
+      tracking_log_write("tracker_type_chosen=" + tracker_type_upper);
+      tracking_log_write("max_cameras=" + std::to_string(max_cameras));
+      tracking_log_write("use_stereo=" + std::to_string((int)use_stereo));
+      tracking_log_write("num_pts=" + std::to_string(num_pts));
+      tracking_log_write("num_aruco=" + std::to_string(num_aruco));
+      tracking_log_write("clone_states=" + std::to_string(clone_states));
+      tracking_log_write("fast_threshold=" + std::to_string(fast_threshold));
+      tracking_log_write("grid_x=" + std::to_string(grid_x));
+      tracking_log_write("grid_y=" + std::to_string(grid_y));
+      tracking_log_write("min_px_dist=" + std::to_string(min_px_dist));
+      tracking_log_write("knn_ratio=" + std::to_string(knn_ratio));
+      tracking_log_write("weights_path=" + sp_weights_path);
+      tracking_log_write("sp_threshold=" + std::to_string(sp_threshold));
+      tracking_log_write("do_nms=" + std::to_string((int)sp_do_nms));
+      tracking_log_write("use_cuda=" + std::to_string((int)sp_use_cuda));
+      tracking_log_write("sp_nfeatures=" + std::to_string(sp_nfeatures));
+      tracking_log_write("tracking_log_avg_frames=" + std::to_string(tracking_log_avg_frames));
+      tracking_log_write("# avg_window columns: frame_count,fps,track_feat,numtracks,lost_feats_per_frame,marg_tracks_per_frame,avg_track_length_lost_feat");
+    }
   }
 
   //===================================================================================
@@ -684,6 +753,10 @@ int main(int argc, char **argv) {
 #endif
 
   // Done!
+  if (tracking_log_stream.is_open()) {
+    tracking_log_stream.flush();
+    tracking_log_stream.close();
+  }
   return EXIT_SUCCESS;
 }
 
@@ -741,7 +814,9 @@ void handle_stereo(double time0, double time1, cv::Mat img0, cv::Mat img1) {
   // Get lost tracks
   std::shared_ptr<FeatureDatabase> database = extractor->get_feature_database();
   std::vector<std::shared_ptr<Feature>> feats_lost = database->features_not_containing_newer(time0);
-  num_lostfeats += feats_lost.size();
+  const int lost_this_frame = (int)feats_lost.size();
+  int lost_total_meas_this_frame = 0;
+  num_lostfeats += lost_this_frame;
 
   // Mark theses feature pointers as deleted
   for (size_t i = 0; i < feats_lost.size(); i++) {
@@ -750,6 +825,7 @@ void handle_stereo(double time0, double time1, cv::Mat img0, cv::Mat img1) {
     for (auto const &pair : feats_lost[i]->timestamps) {
       total_meas += (int)pair.second.size();
     }
+    lost_total_meas_this_frame += total_meas;
     // Update stats
     featslengths += total_meas;
     feats_lost[i]->to_delete = true;
@@ -765,14 +841,62 @@ void handle_stereo(double time0, double time1, cv::Mat img0, cv::Mat img1) {
     clonetimes.pop_front();
     std::vector<std::shared_ptr<Feature>> feats_marg = database->features_containing(margtime);
     num_margfeats += feats_marg.size();
+    const int marg_this_frame = (int)feats_marg.size();
     // Delete theses feature pointers
     for (size_t i = 0; i < feats_marg.size(); i++) {
       feats_marg[i]->to_delete = true;
     }
+    tracking_log_sum_marg_feats += marg_this_frame;
   }
 
   // Tell the feature database to delete old features
   database->cleanup();
+
+  // Active tracked features in latest frame observations.
+  size_t track_feat = 0;
+  std::unordered_map<size_t, std::vector<cv::KeyPoint>> last_obs = extractor->get_last_obs();
+  for (const auto &obs : last_obs) {
+    track_feat += obs.second.size();
+  }
+  const size_t numtracks = database->size();
+
+  if (tracking_log_enable) {
+    if (tracking_log_frame_count == 0) {
+      tracking_log_time_start = wall_clock_seconds();
+    }
+    tracking_log_frame_count++;
+    tracking_log_sum_track_feat += static_cast<double>(track_feat);
+    tracking_log_sum_numtracks += static_cast<double>(numtracks);
+    tracking_log_sum_lost_feats += static_cast<double>(lost_this_frame);
+    tracking_log_sum_lost_track_measurements += static_cast<double>(lost_total_meas_this_frame);
+    if (tracking_log_frame_count >= tracking_log_avg_frames) {
+      const double now = wall_clock_seconds();
+      const double dt = std::max(1e-9, now - tracking_log_time_start);
+      const double fps_window = static_cast<double>(tracking_log_frame_count) / dt;
+      const double avg_track_feat = tracking_log_sum_track_feat / tracking_log_frame_count;
+      const double avg_numtracks = tracking_log_sum_numtracks / tracking_log_frame_count;
+      const double avg_lost = tracking_log_sum_lost_feats / tracking_log_frame_count;
+      const double avg_marg = tracking_log_sum_marg_feats / tracking_log_frame_count;
+      const double avg_track_length_lost_feat =
+          (tracking_log_sum_lost_feats > 0.0) ? (tracking_log_sum_lost_track_measurements / tracking_log_sum_lost_feats) : 0.0;
+      std::ostringstream ss;
+      ss << "avg,"
+         << tracking_log_frame_count << ","
+         << fps_window << ","
+         << avg_track_feat << ","
+         << avg_numtracks << ","
+         << avg_lost << ","
+         << avg_marg << ","
+         << avg_track_length_lost_feat;
+      tracking_log_write(ss.str());
+      tracking_log_frame_count = 0;
+      tracking_log_sum_track_feat = 0.0;
+      tracking_log_sum_numtracks = 0.0;
+      tracking_log_sum_lost_feats = 0.0;
+      tracking_log_sum_marg_feats = 0.0;
+      tracking_log_sum_lost_track_measurements = 0.0;
+    }
+  }
 
   // Debug print out what our current processing speed it
   // We want the FPS to be as high as possible
