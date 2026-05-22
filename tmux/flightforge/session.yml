@@ -28,6 +28,10 @@ windows:
       layout: tiled
       panes:
         - ros2 launch mrs_vins_republisher vins_republisher.launch.py camera_pitch:=0 camera_roll:=0 camera_yaw:=0
+  - bag_record:
+      layout: tiled
+      panes:
+        - mkdir -p bags; ros2 bag record -o bags/hw_gt_openvins_$(date +%Y%m%d_%H%M%S) /uav1/hw_api/ground_truth /uav1/open_vins/odomimu
   - static_tf:
       layout: tiled
       panes:

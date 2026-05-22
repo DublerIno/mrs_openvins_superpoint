@@ -11,10 +11,10 @@ uav1:
   frame: "x500"
   type: "x500"
   spawn:
-    x: 0.0
-    y: 0.0
+    x: -18.0
+    y: 27.0
     z: 0.0
-    heading: 0.0
+    heading: -1.5708
 
 mrs_uav_flightforge_simulator:
 
@@ -40,9 +40,9 @@ mrs_uav_flightforge_simulator:
     stereo:
       enabled: false
 
-  graphics_settings: "medium"
+  graphics_settings: "high"
 
-  realtime_factor: 0.4 # [-]
+  realtime_factor: 1.0 # [-]
 
   # world_name: "valley" # works in Lite
   world_name: "warehouse" # works in Lite
@@ -51,7 +51,7 @@ mrs_uav_flightforge_simulator:
   # world_name: "cave" # does not work
   # world_name: "dead_spruce_forest" # does not work
   # world_name: "infinite_forest" # does not work
-  # world_name: "forest" # does not work
+  # $world_name: "forest" # does not work
 
   # weather_type: "cloudy"
 
